@@ -14,6 +14,11 @@
 
 #define SOBELF_DEBUG 0
 
+/* MPI global variables */
+static MPI_Datatype dt_pixel;
+static int size, rank;
+
+
 /* Represent one pixel from the image */
 typedef struct pixel
 {
@@ -22,7 +27,6 @@ typedef struct pixel
     int b ; /* Blue */
 } pixel ;
 
-MPI_Datatype dt_pixel;
 
 /* Represent one GIF image (animated or not */
 typedef struct animated_gif
@@ -768,16 +772,22 @@ apply_sobel_filter( animated_gif * image )
 
     p = image->p ;
 
+
     for ( i = 0 ; i < image->n_images ; i++ )
     {
         width = image->width[i] ;
         height = image->height[i] ;
 
+        int line_share = width / size;
+        if (width % size) line_share++;
+        int first_line = (rank == 0 ? 1 : rank * line_share);
+        int last_line = (rank == size - 1 ? height - 2 : (rank + 1) * line_share - 1);
+
         pixel * sobel ;
 
         sobel = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
 
-        for(j=1; j<height-1; j++)
+        for(j = first_line; j <= last_line; j++)
         {
             for(k=1; k<width-1; k++)
             {
@@ -835,15 +845,14 @@ apply_sobel_filter( animated_gif * image )
 
 }
 
-void create_dt_pixel() {
+void create_dt_pixel()
+{
 	MPI_Type_contiguous(3, MPI_INT, &dt_pixel);
 	MPI_Type_commit(&dt_pixel);
 }
 
-void bcast_image(animated_gif *image, int rank) {
-    if (rank != 0)
-        image = (animated_gif*) malloc(sizeof(animated_gif));
-
+void bcast_image(animated_gif *image)
+{
 	MPI_Bcast(&image->n_images, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 	if (rank != 0) {
@@ -853,7 +862,6 @@ void bcast_image(animated_gif *image, int rank) {
 	MPI_Bcast(image->width, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
 	MPI_Bcast(image->height, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
 
-
     int i;
 	if (rank != 0) {
 		image->p = (pixel**) malloc(image->n_images * sizeof(pixel*));
@@ -861,14 +869,46 @@ void bcast_image(animated_gif *image, int rank) {
 			image->p[i] = (pixel*) malloc(image->width[i] * image->height[i] * sizeof(pixel));
 	}
 
-	for (i = 0; i < image->n_images; i++)
-		MPI_Bcast(image->p[i], image->width[i] * image->height[i], dt_pixel, 0, MPI_COMM_WORLD);
+    for (i = 0; i < image->n_images; i++)
+        MPI_Bcast(image->p[i], image->width[i] * image->height[i], dt_pixel, 0, MPI_COMM_WORLD);
+}
+
+void gather_image(animated_gif *image)
+{
+    int i, j;
+    if (rank == 0) {
+        MPI_Status status;
+        for (i = 1; i < size; i++) {
+            for (j = 0; j < image->n_images; j++) {
+                int buf[2];
+                MPI_Recv(buf, 2, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
+
+                int first_index = buf[0], n_pixels = buf[1];
+                MPI_Recv(&image->p[j][first_index], n_pixels, dt_pixel, i, 0, MPI_COMM_WORLD, &status);
+            }
+        }
+    } else {
+        for (j = 0; j < image->n_images; j++) {
+            int width = image->width[j];
+            int height = image->height[j];
+            int line_share = width / size;
+            if (width % size) line_share++;
+            int first_line = (rank == 0 ? 1 : rank * line_share);
+            int last_line = (rank == size - 1 ? height - 2 : (rank + 1) * line_share - 1);
+
+            int first_index = first_line * width;
+            int n_pixels = (last_line - first_line + 1) * width;
+
+            int buf[2] = {first_index, n_pixels};
+            MPI_Send(buf, 2, MPI_INT, 0, 0, MPI_COMM_WORLD);
+            MPI_Send(&image->p[j][first_index], n_pixels, dt_pixel, 0, 0,MPI_COMM_WORLD);
+        }
+    }
 }
 
 int main( int argc, char ** argv )
 {
 	MPI_Init(&argc, &argv);
-	int rank, size;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
     create_dt_pixel();
@@ -912,32 +952,38 @@ int main( int argc, char ** argv )
 
         /* Apply blur filter with convergence value */
         apply_blur_filter( image, 5, 20 ) ;
+    } else {
+        image = (animated_gif*) malloc(sizeof(animated_gif));
     }
 
-    bcast_image(image, rank);
+    bcast_image(image);
 
     /* Apply sobel filter on pixels */
-    //apply_sobel_filter( image ) ;
+    apply_sobel_filter( image ) ;
 
-    /* FILTER Timer stop */
-    gettimeofday(&t2, NULL);
+    gather_image(image);
 
-    duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
+    if (rank == 0) {
+        /* FILTER Timer stop */
+        gettimeofday(&t2, NULL);
 
-    printf( "SOBEL done in %lf s\n", duration ) ;
+        duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
 
-    /* EXPORT Timer start */
-    gettimeofday(&t1, NULL);
+        printf( "SOBEL done in %lf s\n", duration ) ;
 
-    /* Store file from array of pixels to GIF file */
-    //if ( !store_pixels( output_filename, image ) ) { return 1 ; }
+        /* EXPORT Timer start */
+        gettimeofday(&t1, NULL);
 
-    /* EXPORT Timer stop */
-    gettimeofday(&t2, NULL);
+        /* Store file from array of pixels to GIF file */
+        if ( !store_pixels( output_filename, image ) ) { return 1 ; }
 
-    duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
+        /* EXPORT Timer stop */
+        gettimeofday(&t2, NULL);
 
-    printf( "Export done in %lf s in file %s\n", duration, output_filename ) ;
+        duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
+
+        printf( "Export done in %lf s in file %s\n", duration, output_filename ) ;
+    }
 
     MPI_Finalize();
 
