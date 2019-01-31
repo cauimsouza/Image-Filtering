@@ -22,6 +22,8 @@ typedef struct pixel
     int b ; /* Blue */
 } pixel ;
 
+MPI_Datatype dt_pixel;
+
 /* Represent one GIF image (animated or not */
 typedef struct animated_gif
 {
@@ -833,12 +835,43 @@ apply_sobel_filter( animated_gif * image )
 
 }
 
+void create_dt_pixel() {
+	MPI_Type_contiguous(3, MPI_INT, &dt_pixel);
+	MPI_Type_commit(&dt_pixel);
+}
+
+void bcast_image(animated_gif *image, int rank) {
+    if (rank != 0)
+        image = (animated_gif*) malloc(sizeof(animated_gif));
+
+	MPI_Bcast(&image->n_images, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	if (rank != 0) {
+		image->width = (int*) malloc(image->n_images * sizeof(int));
+		image->height = (int*) malloc(image->n_images * sizeof(int));
+	}
+	MPI_Bcast(image->width, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(image->height, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
+
+
+    int i;
+	if (rank != 0) {
+		image->p = (pixel**) malloc(image->n_images * sizeof(pixel*));
+		for (i = 0; i < image->n_images; i++)
+			image->p[i] = (pixel*) malloc(image->width[i] * image->height[i] * sizeof(pixel));
+	}
+
+	for (i = 0; i < image->n_images; i++)
+		MPI_Bcast(image->p[i], image->width[i] * image->height[i], dt_pixel, 0, MPI_COMM_WORLD);
+}
+
 int main( int argc, char ** argv )
 {
 	MPI_Init(&argc, &argv);
 	int rank, size;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
+    create_dt_pixel();
 	
     char * input_filename ; 
     char * output_filename ;
@@ -860,48 +893,28 @@ int main( int argc, char ** argv )
 
     /* Load file and store the pixels in array */
     if (rank == 0) {
-		image = load_pixels( input_filename ) ;
-		if ( image == NULL ) { return 1 ; }
+        image = load_pixels( input_filename ) ;
+        if ( image == NULL ) { return 1 ; }
 
-		/* IMPORT Timer stop */
-		gettimeofday(&t2, NULL);
+        /* IMPORT Timer stop */
+        gettimeofday(&t2, NULL);
 
-		duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
+        duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
 
-		printf( "GIF loaded from file %s with %d image(s) in %lf s\n", 
-				input_filename, image->n_images, duration ) ;
+        printf( "GIF loaded from file %s with %d image(s) in %lf s\n", 
+          input_filename, image->n_images, duration ) ;
 
-		/* FILTER Timer start */
-		gettimeofday(&t1, NULL);
+        /* FILTER Timer start */
+        gettimeofday(&t1, NULL);
 
-		/* Convert the pixels into grayscale */
-		apply_gray_filter( image ) ;
+        /* Convert the pixels into grayscale */
+        apply_gray_filter( image ) ;
 
-		/* Apply blur filter with convergence value */
-		apply_blur_filter( image, 5, 20 ) ;
-	}
+        /* Apply blur filter with convergence value */
+        apply_blur_filter( image, 5, 20 ) ;
+    }
 
-	MPI_Bcast(&image->n_images, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-	if (rank != 0) {
-		image->width = (int*) malloc(image->n_images * sizeof(int));
-		image->height = (int*) malloc(image->n_images * sizeof(int));
-	}
-	MPI_Bcast(image->width, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
-	MPI_Bcast(image->height, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
-
-	MPI_Datatype dt_pixel;
-	MPI_Type_contiguous(3, MPI_INT, &dt_pixel);
-	MPI_Type_commit(&dt_pixel);
-
-	if (rank != 0) {
-		image->p = (pixel**) malloc(image->n_images * sizeof(pixel*));
-		for (int i = 0; i < image->n_images; i++)
-			image->p[i] = (pixel*) malloc(image->width[i] * image->height[i] * sizeof(pixel));
-	}
-
-	for (int i = 0; i < image->n_images; i++)
-		MPI_Bcast(p[i], image->width[i] * image->height[i], dt_pixel, 0, MPI_COMM_WORLD);
+    bcast_image(image, rank);
 
     /* Apply sobel filter on pixels */
     //apply_sobel_filter( image ) ;
