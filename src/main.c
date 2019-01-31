@@ -10,6 +10,7 @@
 #include <sys/time.h>
 
 #include <gif_lib.h>
+#include <mpi.h>
 
 #define SOBELF_DEBUG 0
 
@@ -834,7 +835,11 @@ apply_sobel_filter( animated_gif * image )
 
 int main( int argc, char ** argv )
 {
-
+	MPI_Init(&argc, &argv);
+	int rank, size;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	
     char * input_filename ; 
     char * output_filename ;
     animated_gif * image ;
@@ -854,28 +859,52 @@ int main( int argc, char ** argv )
     gettimeofday(&t1, NULL);
 
     /* Load file and store the pixels in array */
-    image = load_pixels( input_filename ) ;
-    if ( image == NULL ) { return 1 ; }
+    if (rank == 0) {
+		image = load_pixels( input_filename ) ;
+		if ( image == NULL ) { return 1 ; }
 
-    /* IMPORT Timer stop */
-    gettimeofday(&t2, NULL);
+		/* IMPORT Timer stop */
+		gettimeofday(&t2, NULL);
 
-    duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
+		duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
 
-    printf( "GIF loaded from file %s with %d image(s) in %lf s\n", 
-            input_filename, image->n_images, duration ) ;
+		printf( "GIF loaded from file %s with %d image(s) in %lf s\n", 
+				input_filename, image->n_images, duration ) ;
 
-    /* FILTER Timer start */
-    gettimeofday(&t1, NULL);
+		/* FILTER Timer start */
+		gettimeofday(&t1, NULL);
 
-    /* Convert the pixels into grayscale */
-    apply_gray_filter( image ) ;
+		/* Convert the pixels into grayscale */
+		apply_gray_filter( image ) ;
 
-    /* Apply blur filter with convergence value */
-    apply_blur_filter( image, 5, 20 ) ;
+		/* Apply blur filter with convergence value */
+		apply_blur_filter( image, 5, 20 ) ;
+	}
+
+	MPI_Bcast(&image->n_images, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	if (rank != 0) {
+		image->width = (int*) malloc(image->n_images * sizeof(int));
+		image->height = (int*) malloc(image->n_images * sizeof(int));
+	}
+	MPI_Bcast(image->width, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(image->height, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
+
+	MPI_Datatype dt_pixel;
+	MPI_Type_contiguous(3, MPI_INT, &dt_pixel);
+	MPI_Type_commit(&dt_pixel);
+
+	if (rank != 0) {
+		image->p = (pixel**) malloc(image->n_images * sizeof(pixel*));
+		for (int i = 0; i < image->n_images; i++)
+			image->p[i] = (pixel*) malloc(image->width[i] * image->height[i] * sizeof(pixel));
+	}
+
+	for (int i = 0; i < image->n_images; i++)
+		MPI_Bcast(p[i], image->width[i] * image->height[i], dt_pixel, 0, MPI_COMM_WORLD);
 
     /* Apply sobel filter on pixels */
-    apply_sobel_filter( image ) ;
+    //apply_sobel_filter( image ) ;
 
     /* FILTER Timer stop */
     gettimeofday(&t2, NULL);
@@ -888,7 +917,7 @@ int main( int argc, char ** argv )
     gettimeofday(&t1, NULL);
 
     /* Store file from array of pixels to GIF file */
-    if ( !store_pixels( output_filename, image ) ) { return 1 ; }
+    //if ( !store_pixels( output_filename, image ) ) { return 1 ; }
 
     /* EXPORT Timer stop */
     gettimeofday(&t2, NULL);
@@ -896,6 +925,8 @@ int main( int argc, char ** argv )
     duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
 
     printf( "Export done in %lf s in file %s\n", duration, output_filename ) ;
+
+    MPI_Finalize();
 
     return 0 ;
 }
