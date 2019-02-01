@@ -17,13 +17,13 @@
 #define SOBELF_DEBUG 0
 
 /* MPI global variables */
-int size, rank;
+int mpi_size, mpi_rank;
 
 int main( int argc, char ** argv )
 {
 	MPI_Init(&argc, &argv);
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
 	
     char * input_filename ; 
     char * output_filename ;
@@ -44,7 +44,7 @@ int main( int argc, char ** argv )
     gettimeofday(&t1, NULL);
 
     /* Load file and store the pixels in array */
-    if (rank == 0) {
+    if (mpi_rank == 0) {
         image = load_pixels( input_filename ) ;
         if ( image == NULL ) { return 1 ; }
 
@@ -75,7 +75,7 @@ int main( int argc, char ** argv )
 
     gather_image(image);
 
-    if (rank == 0) {
+    if (mpi_rank == 0) {
         /* FILTER Timer stop */
         gettimeofday(&t2, NULL);
 

@@ -4,8 +4,8 @@
 #include <gif.h>
 #include <mpi.h>
 
-extern int rank;
-extern int size;
+extern int mpi_rank;
+extern int mpi_size;
 
 void bcast_image(animated_gif *image);
 void gather_image(animated_gif *image);

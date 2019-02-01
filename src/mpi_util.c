@@ -25,7 +25,7 @@ void bcast_image(animated_gif *image)
 
 	MPI_Bcast(&image->n_images, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-	if (rank != 0) {
+	if (mpi_rank != 0) {
 		image->width = (int*) malloc(image->n_images * sizeof(int));
 		image->height = (int*) malloc(image->n_images * sizeof(int));
 	}
@@ -33,7 +33,7 @@ void bcast_image(animated_gif *image)
 	MPI_Bcast(image->height, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
 
     int i;
-	if (rank != 0) {
+	if (mpi_rank != 0) {
 		image->p = (pixel**) malloc(image->n_images * sizeof(pixel*));
 		for (i = 0; i < image->n_images; i++)
 			image->p[i] = (pixel*) malloc(image->width[i] * image->height[i] * sizeof(pixel));
@@ -48,9 +48,9 @@ void gather_image(animated_gif *image)
 	create_dt_pixel();
 
     int i, j;
-    if (rank == 0) {
+    if (mpi_rank == 0) {
         MPI_Status status;
-        for (i = 1; i < size; i++) {
+        for (i = 1; i < mpi_size; i++) {
             for (j = 0; j < image->n_images; j++) {
                 int buf[2];
                 MPI_Recv(buf, 2, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
@@ -63,10 +63,10 @@ void gather_image(animated_gif *image)
         for (j = 0; j < image->n_images; j++) {
             int width = image->width[j];
             int height = image->height[j];
-            int line_share = width / size;
-            if (width % size) line_share++;
-            int first_line = (rank == 0 ? 1 : rank * line_share);
-            int last_line = (rank == size - 1 ? height - 2 : (rank + 1) * line_share - 1);
+            int line_share = width / mpi_size;
+            if (width % mpi_size) line_share++;
+            int first_line = (mpi_rank == 0 ? 1 : mpi_rank * line_share);
+            int last_line = (mpi_rank == mpi_size - 1 ? height - 2 : (mpi_rank + 1) * line_share - 1);
 
             int first_index = first_line * width;
             int n_pixels = (last_line - first_line + 1) * width;
@@ -251,10 +251,10 @@ void mpi_apply_sobel_filter( animated_gif * image )
         width = image->width[i] ;
         height = image->height[i] ;
 
-        int line_share = width / size;
-        if (width % size) line_share++;
-        int first_line = (rank == 0 ? 1 : rank * line_share);
-        int last_line = (rank == size - 1 ? height - 2 : (rank + 1) * line_share - 1);
+        int line_share = width / mpi_size;
+        if (width % mpi_size) line_share++;
+        int first_line = (mpi_rank == 0 ? 1 : mpi_rank * line_share);
+        int last_line = (mpi_rank == mpi_size - 1 ? height - 2 : (mpi_rank + 1) * line_share - 1);
 
         pixel * sobel ;
 
