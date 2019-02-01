@@ -2,3 +2,6 @@
 sobelf
 obj
 images/processed
+cmake-build-*
+*.out
+build
