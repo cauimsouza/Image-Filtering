@@ -32,49 +32,39 @@ void bcast_image(animated_gif *image)
 	MPI_Bcast(image->width, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
 	MPI_Bcast(image->height, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
 
-    int i;
 	if (mpi_rank != 0) {
+        MPI_Status status;
 		image->p = (pixel**) malloc(image->n_images * sizeof(pixel*));
-		for (i = 0; i < image->n_images; i++)
+        int i;
+		for (i = mpi_rank; i < image->n_images; i += mpi_size) {
 			image->p[i] = (pixel*) malloc(image->width[i] * image->height[i] * sizeof(pixel));
+            MPI_Recv(image->p[i], image->width[i] * image->height[i], dt_pixel, 0, 0, MPI_COMM_WORLD, &status);
+        }
 	}
 
-    for (i = 0; i < image->n_images; i++)
-        MPI_Bcast(image->p[i], image->width[i] * image->height[i], dt_pixel, 0, MPI_COMM_WORLD);
+    if (mpi_rank == 0) {
+        int i;
+        for (i = 0; i < image->n_images; i++)
+            if (i % mpi_size != 0)
+                MPI_Send(image->p[i], image->width[i] * image->height[i], dt_pixel, i % mpi_size, 0, MPI_COMM_WORLD);
+    }
 }
 
 void gather_image(animated_gif *image)
 {
 	create_dt_pixel();
 
-    int i, j;
     if (mpi_rank == 0) {
         MPI_Status status;
-        for (i = 1; i < mpi_size; i++) {
-            for (j = 0; j < image->n_images; j++) {
-                int buf[2];
-                MPI_Recv(buf, 2, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
-
-                int first_index = buf[0], n_pixels = buf[1];
-                MPI_Recv(&image->p[j][first_index], n_pixels, dt_pixel, i, 0, MPI_COMM_WORLD, &status);
-            }
+        int i;
+        for (i = 0; i < image->n_images; i++) {
+            if (i % mpi_size != 0)
+                MPI_Recv(image->p[i], image->width[i] * image->height[i], dt_pixel, i % mpi_size, 0, MPI_COMM_WORLD, &status);
         }
     } else {
-        for (j = 0; j < image->n_images; j++) {
-            int width = image->width[j];
-            int height = image->height[j];
-            int line_share = width / mpi_size;
-            if (width % mpi_size) line_share++;
-            int first_line = (mpi_rank == 0 ? 1 : mpi_rank * line_share);
-            int last_line = (mpi_rank == mpi_size - 1 ? height - 2 : (mpi_rank + 1) * line_share - 1);
-
-            int first_index = first_line * width;
-            int n_pixels = (last_line - first_line + 1) * width;
-
-            int buf[2] = {first_index, n_pixels};
-            MPI_Send(buf, 2, MPI_INT, 0, 0, MPI_COMM_WORLD);
-            MPI_Send(&image->p[j][first_index], n_pixels, dt_pixel, 0, 0,MPI_COMM_WORLD);
-        }
+        int i;
+        for (i = mpi_rank; i < image->n_images; i += mpi_size)
+            MPI_Send(image->p[i], image->width[i] * image->height[i], dt_pixel, 0, 0, MPI_COMM_WORLD);
     }
 }
 
@@ -86,7 +76,7 @@ mpi_apply_gray_filter( animated_gif * image )
 
     p = image->p ;
 
-    for ( i = 0 ; i < image->n_images ; i++ )
+    for ( i = mpi_rank ; i < image->n_images ; i += mpi_size)
     {
         for ( j = 0 ; j < image->width[i] * image->height[i] ; j++ )
         {
@@ -120,7 +110,7 @@ mpi_apply_blur_filter( animated_gif * image, int size, int threshold )
 
 
     /* Process all images */
-    for ( i = 0 ; i < image->n_images ; i++ )
+    for ( i = mpi_rank ; i < image->n_images ; i += mpi_size)
     {
         n_iter = 0 ;
         width = image->width[i] ;
@@ -246,21 +236,16 @@ void mpi_apply_sobel_filter( animated_gif * image )
     p = image->p ;
 
 
-    for ( i = 0 ; i < image->n_images ; i++ )
+    for (i = mpi_rank ; i < image->n_images ; i += mpi_size)
     {
         width = image->width[i] ;
         height = image->height[i] ;
-
-        int line_share = width / mpi_size;
-        if (width % mpi_size) line_share++;
-        int first_line = (mpi_rank == 0 ? 1 : mpi_rank * line_share);
-        int last_line = (mpi_rank == mpi_size - 1 ? height - 2 : (mpi_rank + 1) * line_share - 1);
 
         pixel * sobel ;
 
         sobel = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
 
-        for(j = first_line; j <= last_line; j++)
+        for(j = 1; j <= height - 2; j++)
         {
             for(k=1; k<width-1; k++)
             {

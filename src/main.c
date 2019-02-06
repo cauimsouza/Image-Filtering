@@ -59,21 +59,22 @@ int main( int argc, char ** argv )
         /* FILTER Timer start */
         gettimeofday(&t1, NULL);
 
-        /* Convert the pixels into grayscale */
-        /* apply_gray_filter( image ) ; */
-
-        /* Apply blur filter with convergence value */
-        /* apply_blur_filter( image, 5, 20 ) ; */
     } else {
         image = (animated_gif*) malloc(sizeof(animated_gif));
     }
 
     bcast_image(image);
 
+    /* Convert the pixels into grayscale */
+    mpi_apply_gray_filter( image ) ;
+
+    /* Apply blur filter with convergence value */
+    mpi_apply_blur_filter( image, 5, 20 ) ;
+
     /* Apply sobel filter on pixels */
     mpi_apply_sobel_filter( image ) ;
 
-    gather_image(image);
+    //gather_image(image);
 
     if (mpi_rank == 0) {
         /* FILTER Timer stop */
