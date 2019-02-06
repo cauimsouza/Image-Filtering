@@ -7,6 +7,7 @@
 extern int mpi_rank;
 extern int mpi_size;
 
+void mpi_util_init();
 void bcast_image(animated_gif *image);
 void gather_image(animated_gif *image);
 void mpi_apply_gray_filter( animated_gif * image );

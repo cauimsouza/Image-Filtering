@@ -8,21 +8,20 @@
     (l)*(nb_c)+(c)
 
 static MPI_Datatype dt_pixel;
-static int dt_pixel_created = 0;
 
 static void create_dt_pixel()
 {
-	if (dt_pixel_created) return;
-	dt_pixel_created = 1;
-
 	MPI_Type_contiguous(3, MPI_INT, &dt_pixel);
 	MPI_Type_commit(&dt_pixel);
 }
 
-void bcast_image(animated_gif *image)
+void mpi_util_init()
 {
 	create_dt_pixel();
+}
 
+void bcast_image(animated_gif *image)
+{
 	MPI_Bcast(&image->n_images, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 	if (mpi_rank != 0) {
@@ -52,8 +51,6 @@ void bcast_image(animated_gif *image)
 
 void gather_image(animated_gif *image)
 {
-	create_dt_pixel();
-
     if (mpi_rank == 0) {
         MPI_Status status;
         int i;

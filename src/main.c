@@ -63,6 +63,7 @@ int main( int argc, char ** argv )
         image = (animated_gif*) malloc(sizeof(animated_gif));
     }
 
+	mpi_util_init();
     bcast_image(image);
 
     /* Convert the pixels into grayscale */
