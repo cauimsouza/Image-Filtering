@@ -58,14 +58,14 @@ static void bcast_meta(animated_gif *image)
 }
 
 /* Each master distributes its image to all the members of its group */
-void bcast_image_to_slaves(animated_gif *image)
+void masters_to_slaves(animated_gif *image)
 {
     if (mpi_size > image->n_images)
     {
 		int image_id = mpi_rank % image->n_images;
 		int npixels = get_npixels(image, image_id);
 
-		if (!is_master(image->n_images))
+		if (!is_master(image->n_images) && !image->p)
 		{
 			image->p = (pixel**) malloc(image->n_images * sizeof(pixel*));
 			image->p[image_id] = (pixel*) malloc(npixels * sizeof(pixel));
@@ -76,7 +76,7 @@ void bcast_image_to_slaves(animated_gif *image)
 }
 
 /* Dungeon master distributes gif to all masters */
-void bcast_image_to_masters(animated_gif *image)
+void dungeon_master_to_masters(animated_gif *image)
 {
 	bcast_meta(image);
 
@@ -108,7 +108,7 @@ void bcast_image_to_masters(animated_gif *image)
 		}
     }
 
-	//bcast_image_to_slaves(image);
+	//masters_to_slaves(image);
 }
 
 static void get_first_last_lines(animated_gif *image, int image_id, int *first_line, int *last_line)
@@ -143,7 +143,8 @@ static void get_displs_array(int *displs, int *recvcounts)
 		}
 }
 
-static void gather_from_group(animated_gif *image)
+/* Slaves send their work to their master */
+void slaves_to_masters(animated_gif *image)
 {
 	/* In this case each image is treated by only one process */
 	if (image->n_images >= mpi_size) return;
@@ -165,13 +166,13 @@ static void gather_from_group(animated_gif *image)
 		get_displs_array(displs, recvcounts);
 	}
 
-	MPI_Gatherv(&image->p[image_id][first_pixel], npixels, dt_pixel, image->p[image_id], recvcounts, displs, dt_pixel, 0, gcomm);
+	MPI_Gatherv(&image->p[image_id][first_pixel], npixels,
+				dt_pixel, image->p[image_id], recvcounts,
+				displs, dt_pixel, 0, gcomm);
 }
 
-void gather_image(animated_gif *image)
+void masters_to_dungeon_master(animated_gif *image)
 {
-	gather_from_group(image);
-
     if (mpi_rank == 0)
     {
         MPI_Status status;
@@ -199,16 +200,19 @@ void gather_image(animated_gif *image)
 void
 mpi_apply_gray_filter( animated_gif * image )
 {
-	if (!is_master(image->n_images)) return;
-
     int i, j ;
     pixel ** p ;
 
     p = image->p ;
 
-    for ( i = mpi_rank ; i < image->n_images ; i += mpi_size)
+    for ( i = mpi_rank % image->n_images ; i < image->n_images ; i += mpi_size)
     {
-        for ( j = 0 ; j < image->width[i] * image->height[i] ; j++ )
+		int first_line, last_line;
+		get_first_last_lines(image, i, &first_line, &last_line);
+
+		int width = image->width[i];
+        for ( j = first_line * width; j < (last_line + 1) * width ; j++ )
+
         {
             int moy ;
 

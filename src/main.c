@@ -60,24 +60,31 @@ int main( int argc, char ** argv )
         gettimeofday(&t1, NULL);
     } else {
         image = (animated_gif*) malloc(sizeof(animated_gif));
+        image->p = NULL;
+        image->width = NULL;
+        image->height = NULL;
+        image->g = NULL;
     }
 
 	mpi_util_init();
 
-    bcast_image_to_masters(image);
+    dungeon_master_to_masters(image);
+	masters_to_slaves(image);
 
 	/* Convert the pixels into grayscale */
 	mpi_apply_gray_filter( image ) ;
+	slaves_to_masters(image);
 
 	/* Apply blur filter with convergence value */
 	mpi_apply_blur_filter( image, 5, 20 ) ;
 
-	bcast_image_to_slaves(image);
+	masters_to_slaves(image);
 
     /* Apply sobel filter on pixels */
     mpi_apply_sobel_filter( image ) ;
 
-    gather_image(image);
+	slaves_to_masters(image);
+    masters_to_dungeon_master(image);
 
     if (mpi_rank == 0) {
         /* FILTER Timer stop */
