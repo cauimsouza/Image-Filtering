@@ -74,7 +74,7 @@ int main( int argc, char ** argv )
     /* Apply sobel filter on pixels */
     mpi_apply_sobel_filter( image ) ;
 
-    //gather_image(image);
+    gather_image(image);
 
     if (mpi_rank == 0) {
         /* FILTER Timer stop */
