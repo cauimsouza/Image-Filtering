@@ -68,7 +68,7 @@ int main( int argc, char ** argv )
 
 	mpi_util_init();
 
-    dungeon_master_to_masters(image);
+	dungeon_master_to_masters(image);
 	masters_to_slaves(image);
 
 	/* Convert the pixels into grayscale */
@@ -80,11 +80,11 @@ int main( int argc, char ** argv )
 
 	masters_to_slaves(image);
 
-    /* Apply sobel filter on pixels */
-    mpi_apply_sobel_filter( image ) ;
+	/* Apply sobel filter on pixels */
+	mpi_apply_sobel_filter( image ) ;
 
-	slaves_to_masters(image);
-    masters_to_dungeon_master(image);
+        slaves_to_masters(image);
+	masters_to_dungeon_master(image);
 
     if (mpi_rank == 0) {
         /* FILTER Timer stop */

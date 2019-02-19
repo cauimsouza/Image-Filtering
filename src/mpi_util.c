@@ -205,27 +205,30 @@ mpi_apply_gray_filter( animated_gif * image )
 
     p = image->p ;
 
-    for ( i = mpi_rank % image->n_images ; i < image->n_images ; i += mpi_size)
-    {
-		int first_line, last_line;
-		get_first_last_lines(image, i, &first_line, &last_line);
+	int first_line, last_line;
+	get_first_last_lines(image, i, &first_line, &last_line);
 
-		int width = image->width[i];
-        for ( j = first_line * width; j < (last_line + 1) * width ; j++ )
+	int width = image->width[i];
+#pragma omp parallel
+	{
+#pragma omp for collapse(2)
+		for ( i = mpi_rank % image->n_images ; i < image->n_images ; i += mpi_size)
+		{
+			for ( j = first_line * width; j < (last_line + 1) * width ; j++ )
+			{
+				int moy ;
 
-        {
-            int moy ;
+				// moy = p[i][j].r/4 + ( p[i][j].g * 3/4 ) ;
+				moy = (p[i][j].r + p[i][j].g + p[i][j].b)/3 ;
+				if ( moy < 0 ) moy = 0 ;
+				if ( moy > 255 ) moy = 255 ;
 
-            // moy = p[i][j].r/4 + ( p[i][j].g * 3/4 ) ;
-            moy = (p[i][j].r + p[i][j].g + p[i][j].b)/3 ;
-            if ( moy < 0 ) moy = 0 ;
-            if ( moy > 255 ) moy = 255 ;
-
-            p[i][j].r = moy ;
-            p[i][j].g = moy ;
-            p[i][j].b = moy ;
-        }
-    }
+				p[i][j].r = moy ;
+				p[i][j].g = moy ;
+				p[i][j].b = moy ;
+			}
+		}
+	}
 }
 
 void
@@ -364,81 +367,86 @@ mpi_apply_blur_filter( animated_gif * image, int size, int threshold )
 
 void mpi_apply_sobel_filter( animated_gif * image )
 {
-    int i, j, k ;
-    int width, height ;
+    int width = image->width[0];
+    int height = image->height[0];
+    int image_id = mpi_rank % image->n_images;
 
-    pixel ** p ;
+    int first_line, last_line;
+    get_first_last_lines(image, image_id, &first_line, &last_line);
+    if (first_line == 0) first_line++;
+    if (last_line == height - 1) last_line--;
 
-    p = image->p ;
+    pixel *sobel = (pixel *) malloc(width * height * sizeof(pixel));
 
-    for (i = mpi_rank % image->n_images ; i < image->n_images ; i += mpi_size)
+    int i;
+    for (i = image_id; i < image->n_images ; i += mpi_size)
     {
-        width = image->width[i] ;
-        height = image->height[i] ;
+	pixel *p = image->p[i];
 
-        pixel * sobel ;
+#pragma omp parallel default(none) shared(width, height, first_line) \
+  shared(last_line, sobel, mpi_rank, mpi_size, i, p)
+	{
 
-        sobel = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+	    int j, k;
 
-		int first_line, last_line;
-		get_first_last_lines(image, i, &first_line, &last_line);
-		if (first_line == 0) first_line++;
-		if (last_line == height - 1) last_line--;
+#pragma omp for schedule(static)
+	    for(j = first_line; j <= last_line; j++)
+	    {
+		for(k=1; k<width-1; k++)
+		{
+		    int pixel_blue_no, pixel_blue_n, pixel_blue_ne;
+		    int pixel_blue_so, pixel_blue_s, pixel_blue_se;
+		    int pixel_blue_o , pixel_blue  , pixel_blue_e ;
 
-        for(j = first_line; j <= last_line; j++)
-        {
-            for(k=1; k<width-1; k++)
-            {
-                int pixel_blue_no, pixel_blue_n, pixel_blue_ne;
-                int pixel_blue_so, pixel_blue_s, pixel_blue_se;
-                int pixel_blue_o , pixel_blue  , pixel_blue_e ;
+		    float deltaX_blue ;
+		    float deltaY_blue ;
+		    float val_blue;
 
-                float deltaX_blue ;
-                float deltaY_blue ;
-                float val_blue;
+		    pixel_blue_no = p[CONV(j-1,k-1,width)].b ;
+		    pixel_blue_n  = p[CONV(j-1,k  ,width)].b ;
+		    pixel_blue_ne = p[CONV(j-1,k+1,width)].b ;
+		    pixel_blue_so = p[CONV(j+1,k-1,width)].b ;
+		    pixel_blue_s  = p[CONV(j+1,k  ,width)].b ;
+		    pixel_blue_se = p[CONV(j+1,k+1,width)].b ;
+		    pixel_blue_o  = p[CONV(j  ,k-1,width)].b ;
+		    pixel_blue    = p[CONV(j  ,k  ,width)].b ;
+		    pixel_blue_e  = p[CONV(j  ,k+1,width)].b ;
 
-                pixel_blue_no = p[i][CONV(j-1,k-1,width)].b ;
-                pixel_blue_n  = p[i][CONV(j-1,k  ,width)].b ;
-                pixel_blue_ne = p[i][CONV(j-1,k+1,width)].b ;
-                pixel_blue_so = p[i][CONV(j+1,k-1,width)].b ;
-                pixel_blue_s  = p[i][CONV(j+1,k  ,width)].b ;
-                pixel_blue_se = p[i][CONV(j+1,k+1,width)].b ;
-                pixel_blue_o  = p[i][CONV(j  ,k-1,width)].b ;
-                pixel_blue    = p[i][CONV(j  ,k  ,width)].b ;
-                pixel_blue_e  = p[i][CONV(j  ,k+1,width)].b ;
+		    deltaX_blue = -pixel_blue_no + pixel_blue_ne - 2*pixel_blue_o + 2*pixel_blue_e - pixel_blue_so + pixel_blue_se;             
 
-                deltaX_blue = -pixel_blue_no + pixel_blue_ne - 2*pixel_blue_o + 2*pixel_blue_e - pixel_blue_so + pixel_blue_se;             
+		    deltaY_blue = pixel_blue_se + 2*pixel_blue_s + pixel_blue_so - pixel_blue_ne - 2*pixel_blue_n - pixel_blue_no;
 
-                deltaY_blue = pixel_blue_se + 2*pixel_blue_s + pixel_blue_so - pixel_blue_ne - 2*pixel_blue_n - pixel_blue_no;
-
-                val_blue = sqrt(deltaX_blue * deltaX_blue + deltaY_blue * deltaY_blue)/4;
+		    val_blue = sqrt(deltaX_blue * deltaX_blue + deltaY_blue * deltaY_blue)/4;
 
 
-                if ( val_blue > 50 ) 
-                {
-                    sobel[CONV(j  ,k  ,width)].r = 255 ;
-                    sobel[CONV(j  ,k  ,width)].g = 255 ;
-                    sobel[CONV(j  ,k  ,width)].b = 255 ;
-                } else
-                {
-                    sobel[CONV(j  ,k  ,width)].r = 0 ;
-                    sobel[CONV(j  ,k  ,width)].g = 0 ;
-                    sobel[CONV(j  ,k  ,width)].b = 0 ;
-                }
-            }
-        }
+		    if ( val_blue > 50 ) 
+		    {
+			sobel[CONV(j  ,k  ,width)].r = 255 ;
+			sobel[CONV(j  ,k  ,width)].g = 255 ;
+			sobel[CONV(j  ,k  ,width)].b = 255 ;
+		    } else
+		    {
+			sobel[CONV(j  ,k  ,width)].r = 0 ;
+			sobel[CONV(j  ,k  ,width)].g = 0 ;
+			sobel[CONV(j  ,k  ,width)].b = 0 ;
+		    }
+		}
+	    }
 
-        for(j=1; j<height-1; j++)
-        {
-            for(k=1; k<width-1; k++)
-            {
-                p[i][CONV(j  ,k  ,width)].r = sobel[CONV(j  ,k  ,width)].r ;
-                p[i][CONV(j  ,k  ,width)].g = sobel[CONV(j  ,k  ,width)].g ;
-                p[i][CONV(j  ,k  ,width)].b = sobel[CONV(j  ,k  ,width)].b ;
-            }
-        }
+#pragma omp for	schedule(static)
+	    for(j=1; j<height-1; j++)
+	    {
+		for(k=1; k<width-1; k++)
+		{
+		    p[CONV(j  ,k  ,width)].r = sobel[CONV(j  ,k  ,width)].r ;
+		    p[CONV(j  ,k  ,width)].g = sobel[CONV(j  ,k  ,width)].g ;
+		    p[CONV(j  ,k  ,width)].b = sobel[CONV(j  ,k  ,width)].b ;
+		}
+	    }
 
-        free (sobel) ;
+#pragma omp barrier
+	}
     }
 
+    free(sobel);
 }
