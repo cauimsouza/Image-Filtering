@@ -212,7 +212,6 @@ mpi_apply_gray_filter( animated_gif * image )
 #pragma omp parallel default(none) \
 	shared(p, first_line, last_line, width, mpi_rank, mpi_size, image)
 	{
-		printf("Thread %d [%d]\n", omp_get_thread_num(), omp_get_num_threads());
     	int i, j ;
 #pragma omp for private(i, j) collapse(2)
 		for ( i = mpi_rank % image->n_images ; i < image->n_images ; i += mpi_size)
@@ -235,139 +234,152 @@ mpi_apply_gray_filter( animated_gif * image )
 }
 
 void
-mpi_apply_blur_filter( animated_gif * image, int size, int threshold )
+mpi_apply_blur_filter(animated_gif *image, int size, int threshold)
 {
 	// only the master of each subgroup apply the filter,
 	// otherwise the syncronization would be too cumbersome
 	if (!is_master(image->n_images)) return;
 
-    int i, j, k ;
-    int width, height ;
-    int end    = 0 ;
-    int n_iter = 0 ;
+    int i;
+    int width = image->width[0],
+    	height = image->height[0];
+    int end    = 0;
+    int n_iter = 0;
+    double loop_n_iters = height * 0.9 + size;
 
-    pixel ** p ;
-    pixel * new ;
-
-    /* Get the pixels of all images */
-    p = image->p ;
-
+    pixel *p;
+    pixel *new = (pixel *)malloc(width * height * sizeof(pixel));
 
     /* Process all images */
-    for ( i = mpi_rank ; i < image->n_images ; i += mpi_size)
+    for (i = mpi_rank ; i < image->n_images ; i += mpi_size)
     {
         n_iter = 0 ;
-        width = image->width[i] ;
-        height = image->height[i] ;
+        p = image->p[i];
 
-        /* Allocate array of new pixels */
-        new = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+#pragma omp parallel default(none) \
+		shared(width, height, end, n_iter, p, new, size, threshold)
+		{
+			/* Perform at least one blur iteration */
+			do
+			{
+				/* without this barrier we can have a deadlock */
+#pragma omp barrier
 
-        /* Perform at least one blur iteration */
-        do
-        {
-            end = 1 ;
-            n_iter++ ;
+				/* danger! the implicit barrier at the end
+				 * of the block is essential */
+#pragma omp single
+				{
+					end = 1;
+					n_iter++;
+				}
 
-            /* Apply blur on top part of image (10%) */
-            for(j=size; j<height/10-size; j++)
-            {
-                for(k=size; k<width-size; k++)
-                {
-                    int stencil_j, stencil_k ;
-                    int t_r = 0 ;
-                    int t_g = 0 ;
-                    int t_b = 0 ;
+				int j, k;
+				/* Apply blur on top part of image (10%) */
+#pragma omp for private(j, k) collapse(2)
+				for(j = size; j < height / 10 - size; j++)
+				{
+					for(k = size; k < width - size; k++)
+					{
+						int stencil_j, stencil_k ;
+						int t_r = 0 ;
+						int t_g = 0 ;
+						int t_b = 0 ;
 
-                    for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
-                    {
-                        for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
-                        {
-                            t_r += p[i][CONV(j+stencil_j,k+stencil_k,width)].r ;
-                            t_g += p[i][CONV(j+stencil_j,k+stencil_k,width)].g ;
-                            t_b += p[i][CONV(j+stencil_j,k+stencil_k,width)].b ;
-                        }
-                    }
+						for (stencil_j = -size ; stencil_j <= size ; stencil_j++)
+						{
+							for (stencil_k = -size ; stencil_k <= size ; stencil_k++)
+							{
+								t_r += p[CONV(j+stencil_j,k+stencil_k,width)].r ;
+								t_g += p[CONV(j+stencil_j,k+stencil_k,width)].g ;
+								t_b += p[CONV(j+stencil_j,k+stencil_k,width)].b ;
+							}
+						}
 
-                    new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
-                    new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
-                    new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
-                }
-            }
+						new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
+						new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
+						new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
+					}
+				}
 
-            /* Copy the middle part of the image */
-            for(j=height/10-size; j<height*0.9+size; j++)
-            {
-                for(k=size; k<width-size; k++)
-                {
-                    new[CONV(j,k,width)].r = p[i][CONV(j,k,width)].r ; 
-                    new[CONV(j,k,width)].g = p[i][CONV(j,k,width)].g ; 
-                    new[CONV(j,k,width)].b = p[i][CONV(j,k,width)].b ; 
-                }
-            }
+				/* Copy the middle part of the image */
+#pragma omp for private(j, k) collapse(2)
+				for(j = height / 10 - size; j <= (int) (height * 0.9 + size); j++)
+				{
+					for(k=size; k<width-size; k++)
+					{
+						new[CONV(j,k,width)].r = p[CONV(j,k,width)].r ; 
+						new[CONV(j,k,width)].g = p[CONV(j,k,width)].g ; 
+						new[CONV(j,k,width)].b = p[CONV(j,k,width)].b ; 
+					}
+				}
 
-            /* Apply blur on the bottom part of the image (10%) */
-            for(j=height*0.9+size; j<height-size; j++)
-            {
-                for(k=size; k<width-size; k++)
-                {
-                    int stencil_j, stencil_k ;
-                    int t_r = 0 ;
-                    int t_g = 0 ;
-                    int t_b = 0 ;
+				/* Apply blur on the bottom part of the image (10%) */
+#pragma omp for private(j, k) collapse(2)
+				for(j=height*0.9+size; j<height-size; j++)
+				{
+					for(k=size; k<width-size; k++)
+					{
+						int stencil_j, stencil_k ;
+						int t_r = 0 ;
+						int t_g = 0 ;
+						int t_b = 0 ;
 
-                    for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
-                    {
-                        for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
-                        {
-                            t_r += p[i][CONV(j+stencil_j,k+stencil_k,width)].r ;
-                            t_g += p[i][CONV(j+stencil_j,k+stencil_k,width)].g ;
-                            t_b += p[i][CONV(j+stencil_j,k+stencil_k,width)].b ;
-                        }
-                    }
+						for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
+						{
+							for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
+							{
+								t_r += p[CONV(j+stencil_j,k+stencil_k,width)].r ;
+								t_g += p[CONV(j+stencil_j,k+stencil_k,width)].g ;
+								t_b += p[CONV(j+stencil_j,k+stencil_k,width)].b ;
+							}
+						}
 
-                    new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
-                    new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
-                    new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
-                }
-            }
+						new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
+						new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
+						new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
+					}
+				}
 
-            for(j=1; j<height-1; j++)
-            {
-                for(k=1; k<width-1; k++)
-                {
+#pragma omp for private(j, k) collapse(2)
+				for(j=1; j<height-1; j++)
+				{
+					for(k=1; k<width-1; k++)
+					{
 
-                    float diff_r ;
-                    float diff_g ;
-                    float diff_b ;
+						float diff_r ;
+						float diff_g ;
+						float diff_b ;
 
-                    diff_r = (new[CONV(j  ,k  ,width)].r - p[i][CONV(j  ,k  ,width)].r) ;
-                    diff_g = (new[CONV(j  ,k  ,width)].g - p[i][CONV(j  ,k  ,width)].g) ;
-                    diff_b = (new[CONV(j  ,k  ,width)].b - p[i][CONV(j  ,k  ,width)].b) ;
+						diff_r = (new[CONV(j  ,k  ,width)].r - p[CONV(j  ,k  ,width)].r) ;
+						diff_g = (new[CONV(j  ,k  ,width)].g - p[CONV(j  ,k  ,width)].g) ;
+						diff_b = (new[CONV(j  ,k  ,width)].b - p[CONV(j  ,k  ,width)].b) ;
 
-                    if ( diff_r > threshold || -diff_r > threshold 
-                            ||
-                             diff_g > threshold || -diff_g > threshold
-                             ||
-                              diff_b > threshold || -diff_b > threshold
-                       ) {
-                        end = 0 ;
-                    }
+						if ( diff_r > threshold || -diff_r > threshold 
+								||
+								diff_g > threshold || -diff_g > threshold
+								||
+								diff_b > threshold || -diff_b > threshold
+						) {
+#pragma omp atomic write
+							end = 0 ;
+						}
 
-                    p[i][CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
-                    p[i][CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
-                    p[i][CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
-                }
-            }
+						p[CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
+						p[CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
+						p[CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
+					}
+				}
 
-        }
-        while ( threshold > 0 && !end ) ;
-
-        // printf( "Nb iter for image %d\n", n_iter ) ;
-
-        free (new) ;
+				/* we must wait everyone to finish to be sure "end"
+				 * has the right value
+				 */
+#pragma omp barrier
+			}
+			while (threshold > 0 && !end) ;
+		}
     }
 
+    free (new) ;
 }
 
 void mpi_apply_sobel_filter( animated_gif * image )
