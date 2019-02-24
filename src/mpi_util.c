@@ -201,8 +201,7 @@ void masters_to_dungeon_master(animated_gif *image)
 void
 mpi_apply_gray_filter( animated_gif * image )
 {
-    int i, j ;
-    pixel ** p ;
+    pixel **p;
 
     p = image->p ;
 
@@ -210,9 +209,12 @@ mpi_apply_gray_filter( animated_gif * image )
     get_first_last_lines(image, &first_line, &last_line);
 
     int width = image->width[0];
-#pragma omp parallel
+#pragma omp parallel default(none) \
+	shared(p, first_line, last_line, width, mpi_rank, mpi_size, image)
 	{
-#pragma omp for collapse(2)
+		printf("Thread %d [%d]\n", omp_get_thread_num(), omp_get_num_threads());
+    	int i, j ;
+#pragma omp for private(i, j) collapse(2)
 		for ( i = mpi_rank % image->n_images ; i < image->n_images ; i += mpi_size)
 		{
 			for ( j = first_line * width; j < (last_line + 1) * width ; j++ )
@@ -389,11 +391,8 @@ void mpi_apply_sobel_filter( animated_gif * image )
 #pragma omp parallel default(none) shared(width, height, first_line) \
 	shared(last_line, sobel, mpi_rank, mpi_size, i, p)
 		{
-			printf("Thread %d [%d], node %d [%d]\n", omp_get_thread_num(), omp_get_num_threads(),
-					mpi_rank, mpi_size);
 			int j, k;
-
-#pragma omp for schedule(static) collapse(2)
+#pragma omp for private(j, k) schedule(static) collapse(2)
 			for(j = first_line; j <= last_line; j++)
 			{
 				for(k=1; k<width-1; k++)
@@ -437,7 +436,7 @@ void mpi_apply_sobel_filter( animated_gif * image )
 				}
 			}
 
-#pragma omp for	schedule(static) collapse(2)
+#pragma omp for	private(j, k) schedule(static) collapse(2)
 			for(j=1; j<height-1; j++)
 			{
 				for(k=1; k<width-1; k++)
