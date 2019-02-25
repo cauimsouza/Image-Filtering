@@ -73,18 +73,28 @@ int main( int argc, char ** argv )
 	masters_to_slaves(image);
 	
 	/* /\* Convert the pixels into grayscale *\/		   */
+	double tik, tak;
+	if (mpi_rank == 0) tik = MPI_Wtime();
 	mpi_apply_gray_filter( image ) ;
+	if (mpi_rank == 0) tak = MPI_Wtime();
+	if (mpi_rank == 0) printf("Gray filter: %f s\n", tak - tik);
 	/* slaves_to_masters(image); */
 	
 	/* Apply blur filter with convergence value */
+	if (mpi_rank == 0) tik = MPI_Wtime();
 	mpi_apply_blur_filter(image, 5, 20) ;
+	if (mpi_rank == 0) tak = MPI_Wtime();
+	if (mpi_rank == 0) printf("Blur filter: %f s\n", tak - tik);
 	
 	masters_to_slaves(image);
 	
 	/* Apply sobel filter on pixels */
+	if (mpi_rank == 0) tik = MPI_Wtime();
 	mpi_apply_sobel_filter( image ) ;
+	if (mpi_rank == 0) tak = MPI_Wtime();
+	if (mpi_rank == 0) printf("Sobel filter: %f s\n", tak - tik);
 	
-        slaves_to_masters(image);
+    slaves_to_masters(image);
 	masters_to_dungeon_master(image);
 	
     if (mpi_rank == 0) {
@@ -93,7 +103,7 @@ int main( int argc, char ** argv )
 
         duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
 
-        printf( "SOBEL done in %lf s\n", duration ) ;
+        /* printf( "SOBEL done in %lf s\n", duration ) ; */
 
         /* EXPORT Timer start */
         gettimeofday(&t1, NULL);
