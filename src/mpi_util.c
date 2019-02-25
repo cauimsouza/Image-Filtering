@@ -275,7 +275,7 @@ mpi_apply_blur_filter(animated_gif *image, int size, int threshold)
 
 				int j, k;
 				/* Apply blur on top part of image (10%) */
-#pragma omp for private(j, k) collapse(2)
+#pragma omp for private(j, k) collapse(2) nowait
 				for(j = size; j < height / 10 - size; j++)
 				{
 					for(k = size; k < width - size; k++)
@@ -302,7 +302,7 @@ mpi_apply_blur_filter(animated_gif *image, int size, int threshold)
 				}
 
 				/* Copy the middle part of the image */
-#pragma omp for private(j, k) collapse(2)
+#pragma omp for private(j, k) collapse(2) nowait
 				for(j = height / 10 - size; j <= (int) (height * 0.9 + size); j++)
 				{
 					for(k=size; k<width-size; k++)
@@ -314,7 +314,7 @@ mpi_apply_blur_filter(animated_gif *image, int size, int threshold)
 				}
 
 				/* Apply blur on the bottom part of the image (10%) */
-#pragma omp for private(j, k) collapse(2)
+#pragma omp for private(j, k) collapse(2) nowait
 				for(j=height*0.9+size; j<height-size; j++)
 				{
 					for(k=size; k<width-size; k++)
@@ -369,11 +369,10 @@ mpi_apply_blur_filter(animated_gif *image, int size, int threshold)
 						p[CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
 					}
 				}
-
 				/* we must wait everyone to finish to be sure "end"
-				 * has the right value
+				 * has the right value, so the implicit barrier at the
+				 * end of the for-loop is essential
 				 */
-#pragma omp barrier
 			}
 			while (threshold > 0 && !end) ;
 		}
