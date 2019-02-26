@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <sys/time.h>
+#include <omp.h>
 
 #include <gif_lib.h>
 
@@ -850,52 +851,36 @@ int main( int argc, char ** argv )
     input_filename = argv[1] ;
     output_filename = argv[2] ;
 
-    /* IMPORT Timer start */
-    gettimeofday(&t1, NULL);
 
     /* Load file and store the pixels in array */
     image = load_pixels( input_filename ) ;
     if ( image == NULL ) { return 1 ; }
 
-    /* IMPORT Timer stop */
-    gettimeofday(&t2, NULL);
 
-    duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
-
-    printf( "GIF loaded from file %s with %d image(s) in %lf s\n", 
-            input_filename, image->n_images, duration ) ;
 
     /* FILTER Timer start */
     gettimeofday(&t1, NULL);
 
     /* Convert the pixels into grayscale */
-    apply_gray_filter( image ) ;
+    //apply_gray_filter( image ) ;
 
+    /* IMPORT Timer start */
+    gettimeofday(&t1, NULL);
     /* Apply blur filter with convergence value */
     apply_blur_filter( image, 5, 20 ) ;
-
-    /* Apply sobel filter on pixels */
-    apply_sobel_filter( image ) ;
-
-    /* FILTER Timer stop */
+    /* IMPORT Timer stop */
     gettimeofday(&t2, NULL);
 
     duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
 
-    printf( "SOBEL done in %lf s\n", duration ) ;
+    printf("%f\n", duration) ;
+    /* Apply sobel filter on pixels */
+    //apply_sobel_filter( image ) ;
 
-    /* EXPORT Timer start */
-    gettimeofday(&t1, NULL);
+    /* FILTER Timer stop */
 
     /* Store file from array of pixels to GIF file */
     if ( !store_pixels( output_filename, image ) ) { return 1 ; }
-
-    /* EXPORT Timer stop */
-    gettimeofday(&t2, NULL);
-
-    duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
-
-    printf( "Export done in %lf s in file %s\n", duration, output_filename ) ;
 
     return 0 ;
 }
