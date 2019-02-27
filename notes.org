@@ -1,0 +1,44 @@
+* TODO Otimizar openmp
+** TODO Otimizar blur filter
+*** DONE Registrar tempo do algoritmo sequencial em uma imagem e em varias imagens
+    CLOSED: [2019-02-27 mer. 00:26]
+    Tempo medio: 2.07 s
+
+*** TODO Registrar tempo do algoritmo usando tasks em uma imagem e em varias imagens
+Tempo para uma imagem (1.gif):
+| no. threads | tempo (s) |
+|-------------+-----------|
+| 1           | 1.75      |
+| 2           | 0.93      |
+| 3           | 0.64      |
+| 4           | 0.49      |
+
+Colapsando alguns (razoavelmente grandes) loops for, o tempo obtido para uma mesma imagem
+nao mudou muito.
+
+*** TODO Registrar tempo do algoritmo usando #pragma omp for
+Tempo para uma imagem (1.gif) com scheduling estatico:
+| no. threads | tempo (s) |
+|-------------+-----------|
+| 1           | 1.77      |
+| 2           | 0.93      |
+| 3           | 0.67      |
+| 4           | 0.49      |
+
+Tempo para uma imagem (1.gif) com scheduling dinamico:
+| no. threads | tempo (s) |
+|-------------+-----------|
+|           1 |       2.6 |
+|           2 |      2.11 |
+|           3 |      1.62 |
+|           4 |      1.41 |
+
+Tempo para uma imagem (1.gif) com scheduling guiado (guided):
+| no. threads | tempo (s) |
+|-------------+-----------|
+|           1 |      1.78 |
+|           2 |      0.94 |
+|           3 |      0.63 |
+|           4 |      0.48 | 
+  
+
