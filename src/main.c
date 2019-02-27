@@ -627,39 +627,34 @@ void apply_gray_line( animated_gif * image )
 void
 apply_blur_filter( animated_gif * image, int size, int threshold )
 {
-#pragma omp parallel default(none) \
-  shared(size, threshold, image)
-    {
-
     int i;
     int width = image->width[0],
         height = image->height[0];
+    int end = 0 ;
 
-#pragma omp single 
-  {
+    pixel *new = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+
     /* Process all images */
     for ( i = 0 ; i < image->n_images ; i++ ) {
-#pragma omp task default(none) \
-  shared(image, width, height, size, threshold) firstprivate(i)
+#pragma omp parallel default(none) \
+  shared(image, width, height, size, threshold, i, new, end)
     {
 	/* Get the pixels of all images */
 	pixel *p = image->p[i] ;
-	int end = 0 ;
-	int n_iter = 0 ;
 
         /* Allocate array of new pixels */
-        pixel *new = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
 
         /* Perform at least one blur iteration */
         do
         {
+	  #pragma omp barrier
+	  
+	  #pragma omp master
             end = 1 ;
-            n_iter++ ;
 
 	    int j, k;
             /* Apply blur on top part of image (10%) */
-#pragma omp taskloop default(none) nogroup \
-  shared(width, height, size) firstprivate(p, new) private(k)
+#pragma omp for nowait collapse(2)
             for(j=size; j<height/10-size; j++)
             {
                 for(k=size; k<width-size; k++)
@@ -687,8 +682,7 @@ apply_blur_filter( animated_gif * image, int size, int threshold )
 
 	    int max_value = (int) (height * 0.9 + size);
             /* Copy the middle part of the image */
-#pragma omp taskloop default(none) nogroup \
-  shared(width, height, size, max_value) firstprivate(p, new) private(k)
+#pragma omp for nowait collapse(2)
             for(j=height/10-size; j <= max_value; j++)
             {
                 for(k=size; k<width-size; k++)
@@ -700,8 +694,7 @@ apply_blur_filter( animated_gif * image, int size, int threshold )
             }
 
             /* Apply blur on the bottom part of the image (10%) */
-#pragma omp taskloop default(none) nogroup \
-  shared(width, height, size) firstprivate(p, new) private(k)
+#pragma omp for collapse(2)
             for(j=height*0.9+size; j<height-size; j++)
             {
                 for(k=size; k<width-size; k++)
@@ -727,10 +720,7 @@ apply_blur_filter( animated_gif * image, int size, int threshold )
                 }
             }
 
-	    #pragma omp taskwait
-
-#pragma omp taskloop default(none) \
-  shared(width, height, size, end, threshold) firstprivate(p, new) private(k)
+#pragma omp for collapse(2)
             for(j=1; j<height-1; j++)
             {
                 for(k=1; k<width-1; k++)
@@ -759,20 +749,16 @@ apply_blur_filter( animated_gif * image, int size, int threshold )
                     p[CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
                 }
             }
-
         }
         while ( threshold > 0 && !end ) ;
 
         // printf( "Nb iter for image %d\n", n_iter ) ;
 
-        free (new) ;
     }
 
-    } // end pragma omp task
+    }
 
-    } // end pragma omp single
-
-} // end pragma omp parallel
+        free (new) ;
 }
 
 void
