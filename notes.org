@@ -51,6 +51,22 @@ Resultados usando taskloops em cada imagem (no segundo "for") para 1 imagem (1.g
 |           1 |    0.0200 |
 |           2 |    0.0176 |
 |           3 |    0.0156 |
-|           4 | 0.0140    |
+|           4 |    0.0140 |
 
+Resultados usando "omp for collapse(2) nowait" para 1 imagem (1.gif):
+| no. threads | tempo (s) |
+|-------------+-----------|
+|           1 |    0.0147 |
+|           2 |    0.0143 |
+|           3 |    0.0135 |
+|           4 |    0.0128 |
 
+Resultados usando "omp for collapse(2) nowait" para test set:
+| no. threads | tempo (s) |
+|-------------+-----------|
+|           1 |     1.742 |
+|           2 |     0.931 |
+|           3 |     0.641 |
+|           4 |     0.534 |
+
+Melhor estrategia: omp for collapse(2) nowait com 4 threads
