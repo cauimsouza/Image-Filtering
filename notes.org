@@ -45,7 +45,7 @@ Podemos dizer que o speed-up foi de 1.77 / 0.48 = 3.7 para o blur filter.
 
 ** TODO Otimizar gray filter
 
-Resultados usando taskloops em cada imagem (no segundo "for") para 1 imagem (1.gif):
+Resultados em 1 imagem (1.gif) usando taskloops:
 | no. threads | tempo (s) |
 |-------------+-----------|
 |           1 |    0.0200 |
@@ -53,7 +53,15 @@ Resultados usando taskloops em cada imagem (no segundo "for") para 1 imagem (1.g
 |           3 |    0.0156 |
 |           4 |    0.0140 |
 
-Resultados usando "omp for collapse(2) nowait" para 1 imagem (1.gif):
+Resultados no test set usando "omp taskloop":
+| no. threads | tempo (s) |
+|-------------+-----------|
+|           1 |     1.141 |
+|           2 |     0.583 |
+|           3 |     0.408 |
+|           4 |     0.318 |
+
+Resultados em 1 imagem (1.gif) usando "omp for collapse(2) nowait":
 | no. threads | tempo (s) |
 |-------------+-----------|
 |           1 |    0.0147 |
@@ -61,7 +69,7 @@ Resultados usando "omp for collapse(2) nowait" para 1 imagem (1.gif):
 |           3 |    0.0135 |
 |           4 |    0.0128 |
 
-Resultados usando "omp for collapse(2) nowait" para test set:
+Resultados no test set usando "omp for collapse(2) nowait":
 | no. threads | tempo (s) |
 |-------------+-----------|
 |           1 |     1.742 |
@@ -69,4 +77,4 @@ Resultados usando "omp for collapse(2) nowait" para test set:
 |           3 |     0.641 |
 |           4 |     0.534 |
 
-Melhor estrategia: omp for collapse(2) nowait com 4 threads
+Melhor estrategia: usar taskloop
