@@ -866,11 +866,6 @@ int main( int argc, char ** argv )
     image = load_pixels( input_filename ) ;
     if ( image == NULL ) { return 1 ; }
 
-
-
-    /* FILTER Timer start */
-    gettimeofday(&t1, NULL);
-
     /* IMPORT Timer start */
     gettimeofday(&t1, NULL);
     /* Convert the pixels into grayscale */
@@ -890,7 +885,7 @@ int main( int argc, char ** argv )
     /* FILTER Timer stop */
 
     /* Store file from array of pixels to GIF file */
-    if ( !store_pixels( output_filename, image ) ) { return 1 ; }
+    //if ( !store_pixels( output_filename, image ) ) { return 1 ; }
 
     return 0 ;
 }
