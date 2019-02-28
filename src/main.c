@@ -580,32 +580,28 @@ apply_gray_filter( animated_gif * image )
     int width = image->width[0],
       height = image->height[0];
 
+    pixel **p = image->p;
 #pragma omp parallel default(none) \
-  shared(image, width, height)
+  shared(image, width, height, p)
     {
-      #pragma omp master
-      {
 	int i, j ;
 	
+#pragma omp for nowait collapse(2)
 	for ( i = 0 ; i < image->n_images ; i++ )
 	{
-	  pixel *p = image->p[i];
-#pragma omp taskloop nogroup default(none) \
-  shared(width, height) firstprivate(p)
-	    for ( j = 0 ; j < image->width[i] * image->height[i] ; j++ )
+	    for ( j = 0 ; j < width * height ; j++ )
 	    {
 		int moy ;
 
-		moy = (p[j].r + p[j].g + p[j].b)/3 ;
+		moy = (p[i][j].r + p[i][j].g + p[i][j].b)/3 ;
 		if ( moy < 0 ) moy = 0 ;
 		if ( moy > 255 ) moy = 255 ;
 
-		p[j].r = moy ;
-		p[j].g = moy ;
-		p[j].b = moy ;
+		p[i][j].r = moy ;
+		p[i][j].g = moy ;
+		p[i][j].b = moy ;
 	    }
 	}
-      }
     }
 }
 
