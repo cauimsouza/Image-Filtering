@@ -577,26 +577,35 @@ store_pixels( char * filename, animated_gif * image )
 void
 apply_gray_filter( animated_gif * image )
 {
-    int i, j ;
-    pixel ** p ;
+    int width = image->width[0],
+      height = image->height[0];
 
-    p = image->p ;
-
-    for ( i = 0 ; i < image->n_images ; i++ )
+#pragma omp parallel default(none) \
+  shared(image, width, height)
     {
-        for ( j = 0 ; j < image->width[i] * image->height[i] ; j++ )
-        {
-            int moy ;
+      #pragma omp master
+      {
+	int i, j ;
+	
+	for ( i = 0 ; i < image->n_images ; i++ )
+	{
+	  pixel *p = image->p[i];
+#pragma omp taskloop nogroup default(none) \
+  shared(width, height) firstprivate(p)
+	    for ( j = 0 ; j < image->width[i] * image->height[i] ; j++ )
+	    {
+		int moy ;
 
-            // moy = p[i][j].r/4 + ( p[i][j].g * 3/4 ) ;
-            moy = (p[i][j].r + p[i][j].g + p[i][j].b)/3 ;
-            if ( moy < 0 ) moy = 0 ;
-            if ( moy > 255 ) moy = 255 ;
+		moy = (p[j].r + p[j].g + p[j].b)/3 ;
+		if ( moy < 0 ) moy = 0 ;
+		if ( moy > 255 ) moy = 255 ;
 
-            p[i][j].r = moy ;
-            p[i][j].g = moy ;
-            p[i][j].b = moy ;
-        }
+		p[j].r = moy ;
+		p[j].g = moy ;
+		p[j].b = moy ;
+	    }
+	}
+      }
     }
 }
 
@@ -866,15 +875,15 @@ int main( int argc, char ** argv )
     /* FILTER Timer start */
     gettimeofday(&t1, NULL);
 
-    /* Convert the pixels into grayscale */
-    //apply_gray_filter( image ) ;
-
     /* IMPORT Timer start */
     gettimeofday(&t1, NULL);
-    /* Apply blur filter with convergence value */
-    apply_blur_filter( image, 5, 20 ) ;
+    /* Convert the pixels into grayscale */
+    apply_gray_filter( image ) ;
     /* IMPORT Timer stop */
     gettimeofday(&t2, NULL);
+
+    /* Apply blur filter with convergence value */
+    //apply_blur_filter( image, 5, 20 ) ;
 
     duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
 
