@@ -43,7 +43,7 @@ Tempo para uma imagem (1.gif) com scheduling guiado (guided):
   
 Podemos dizer que o speed-up foi de 1.77 / 0.48 = 3.7 para o blur filter.
 
-Conclusao: usar taskloops com scheduling par default ou "omp for" com scheduling guiado.
+*Conclusao*: usar taskloops com scheduling par default ou "omp for" com scheduling guiado.
 
 ** DONE Otimizar gray filter
 
@@ -79,7 +79,7 @@ Resultados no test set usando "omp for collapse(2) nowait":
 |           3 |     0.641 |
 |           4 |     0.534 |
 
-Conclusao: usar taskloops com scheduling par default.
+*Conclusao*: usar taskloops com scheduling par default.
 
 ** DONE Otimizar sobel filter
 
@@ -99,7 +99,7 @@ Resultado no test set usando for loops:
 |           3 |      2.96 |
 |           4 |      2.30 |
 
-Conclusao: usar for loops com scheduling par default.
+*Conclusao*: usar for loops com scheduling par default.
 
 Bom argumento para a soutenance da escolha da divisao de imagens
 em linhas: dividir em linhas eh mais cache-friendly do que em retangulos.
