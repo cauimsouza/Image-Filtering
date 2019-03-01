@@ -769,78 +769,92 @@ apply_blur_filter( animated_gif * image, int size, int threshold )
 void
 apply_sobel_filter( animated_gif * image )
 {
-  int i, j, k ;
-  int width, height ;
+  int width = image->width[0],
+    height = image->height[0];
 
-  pixel ** p ;
+  pixel **p = image->p;
+#pragma omp parallel default(none) \
+  shared(image, width, height, p)
+  {
 
-  p = image->p ;
-
-  for ( i = 0 ; i < image->n_images ; i++ )
+    #pragma omp single
     {
-      width = image->width[i] ;
-      height = image->height[i] ;
+      int i;
 
-      pixel * sobel ;
+      for ( i = 0 ; i < image->n_images ; i++ )
+      {
+#pragma omp task default(none) \
+  shared(width, height, p) firstprivate(i)
+	{
+	    pixel * sobel;
+	    int j, k;
 
-      sobel = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+	    sobel = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
 
-      for(j=1; j<height-1; j++)
-        {
-	  for(k=1; k<width-1; k++)
-            {
-	      int pixel_blue_no, pixel_blue_n, pixel_blue_ne;
-	      int pixel_blue_so, pixel_blue_s, pixel_blue_se;
-	      int pixel_blue_o , pixel_blue  , pixel_blue_e ;
+#pragma omp taskloop nogroup default(none) \
+  shared(width, height, p, sobel) firstprivate(i, k)
+	    for(j=1; j<height-1; j++)
+		{
+		for(k=1; k<width-1; k++)
+		    {
+		    int pixel_blue_no, pixel_blue_n, pixel_blue_ne;
+		    int pixel_blue_so, pixel_blue_s, pixel_blue_se;
+		    int pixel_blue_o , pixel_blue  , pixel_blue_e ;
 
-	      float deltaX_blue ;
-	      float deltaY_blue ;
-	      float val_blue;
+		    float deltaX_blue ;
+		    float deltaY_blue ;
+		    float val_blue;
 
-	      pixel_blue_no = p[i][CONV(j-1,k-1,width)].b ;
-	      pixel_blue_n  = p[i][CONV(j-1,k  ,width)].b ;
-	      pixel_blue_ne = p[i][CONV(j-1,k+1,width)].b ;
-	      pixel_blue_so = p[i][CONV(j+1,k-1,width)].b ;
-	      pixel_blue_s  = p[i][CONV(j+1,k  ,width)].b ;
-	      pixel_blue_se = p[i][CONV(j+1,k+1,width)].b ;
-	      pixel_blue_o  = p[i][CONV(j  ,k-1,width)].b ;
-	      pixel_blue    = p[i][CONV(j  ,k  ,width)].b ;
-	      pixel_blue_e  = p[i][CONV(j  ,k+1,width)].b ;
+		    pixel_blue_no = p[i][CONV(j-1,k-1,width)].b ;
+		    pixel_blue_n  = p[i][CONV(j-1,k  ,width)].b ;
+		    pixel_blue_ne = p[i][CONV(j-1,k+1,width)].b ;
+		    pixel_blue_so = p[i][CONV(j+1,k-1,width)].b ;
+		    pixel_blue_s  = p[i][CONV(j+1,k  ,width)].b ;
+		    pixel_blue_se = p[i][CONV(j+1,k+1,width)].b ;
+		    pixel_blue_o  = p[i][CONV(j  ,k-1,width)].b ;
+		    pixel_blue    = p[i][CONV(j  ,k  ,width)].b ;
+		    pixel_blue_e  = p[i][CONV(j  ,k+1,width)].b ;
 
-	      deltaX_blue = -pixel_blue_no + pixel_blue_ne - 2*pixel_blue_o + 2*pixel_blue_e - pixel_blue_so + pixel_blue_se;             
+		    deltaX_blue = -pixel_blue_no + pixel_blue_ne - 2*pixel_blue_o + 2*pixel_blue_e - pixel_blue_so + pixel_blue_se;             
 
-	      deltaY_blue = pixel_blue_se + 2*pixel_blue_s + pixel_blue_so - pixel_blue_ne - 2*pixel_blue_n - pixel_blue_no;
+		    deltaY_blue = pixel_blue_se + 2*pixel_blue_s + pixel_blue_so - pixel_blue_ne - 2*pixel_blue_n - pixel_blue_no;
 
-	      val_blue = sqrt(deltaX_blue * deltaX_blue + deltaY_blue * deltaY_blue)/4;
+		    val_blue = sqrt(deltaX_blue * deltaX_blue + deltaY_blue * deltaY_blue)/4;
 
 
-	      if ( val_blue > 50 ) 
-                {
-		  sobel[CONV(j  ,k  ,width)].r = 255 ;
-		  sobel[CONV(j  ,k  ,width)].g = 255 ;
-		  sobel[CONV(j  ,k  ,width)].b = 255 ;
-                } else
-                {
-		  sobel[CONV(j  ,k  ,width)].r = 0 ;
-		  sobel[CONV(j  ,k  ,width)].g = 0 ;
-		  sobel[CONV(j  ,k  ,width)].b = 0 ;
-                }
-            }
-        }
+		    if ( val_blue > 50 ) 
+			{
+			sobel[CONV(j  ,k  ,width)].r = 255 ;
+			sobel[CONV(j  ,k  ,width)].g = 255 ;
+			sobel[CONV(j  ,k  ,width)].b = 255 ;
+			} else
+			{
+			sobel[CONV(j  ,k  ,width)].r = 0 ;
+			sobel[CONV(j  ,k  ,width)].g = 0 ;
+			sobel[CONV(j  ,k  ,width)].b = 0 ;
+			}
+		    }
+		}
 
-      for(j=1; j<height-1; j++)
-        {
-	  for(k=1; k<width-1; k++)
-            {
-	      p[i][CONV(j  ,k  ,width)].r = sobel[CONV(j  ,k  ,width)].r ;
-	      p[i][CONV(j  ,k  ,width)].g = sobel[CONV(j  ,k  ,width)].g ;
-	      p[i][CONV(j  ,k  ,width)].b = sobel[CONV(j  ,k  ,width)].b ;
-            }
-        }
+#pragma omp taskloop nogroup default(none) \
+  shared(width, height, p, sobel) firstprivate(i, k)
+	    for(j=1; j<height-1; j++)
+		{
+		for(k=1; k<width-1; k++)
+		    {
+		    p[i][CONV(j  ,k  ,width)].r = sobel[CONV(j  ,k  ,width)].r ;
+		    p[i][CONV(j  ,k  ,width)].g = sobel[CONV(j  ,k  ,width)].g ;
+		    p[i][CONV(j  ,k  ,width)].b = sobel[CONV(j  ,k  ,width)].b ;
+		    }
+		}
 
-      free (sobel) ;
+	    #pragma omp taskwait
+	    
+	    free (sobel) ;
+	}
+      }
     }
-
+  }
 }
 
 int main( int argc, char ** argv )
@@ -866,23 +880,22 @@ int main( int argc, char ** argv )
   image = load_pixels( input_filename ) ;
   if ( image == NULL ) { return 1 ; }
 
-  /* IMPORT Timer start */
-  gettimeofday(&t1, NULL);
   /* Convert the pixels into grayscale */
-  apply_gray_filter( image ) ;
-  /* IMPORT Timer stop */
-  gettimeofday(&t2, NULL);
+  //apply_gray_filter( image ) ;
 
   /* Apply blur filter with convergence value */
   //apply_blur_filter( image, 5, 20 ) ;
 
+  gettimeofday(&t1, NULL);
+
+  /* Apply sobel filter on pixels */
+  apply_sobel_filter( image ) ;
+
+  gettimeofday(&t2, NULL);
+
   duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
 
   printf("%f\n", duration) ;
-  /* Apply sobel filter on pixels */
-  //apply_sobel_filter( image ) ;
-
-  /* FILTER Timer stop */
 
   /* Store file from array of pixels to GIF file */
   //if ( !store_pixels( output_filename, image ) ) { return 1 ; }

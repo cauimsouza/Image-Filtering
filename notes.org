@@ -43,7 +43,7 @@ Tempo para uma imagem (1.gif) com scheduling guiado (guided):
   
 Podemos dizer que o speed-up foi de 1.77 / 0.48 = 3.7 para o blur filter.
 
-** TODO Otimizar gray filter
+** DONE Otimizar gray filter
 
 Resultados em 1 imagem (1.gif) usando taskloops:
 | no. threads | tempo (s) |
@@ -78,3 +78,15 @@ Resultados no test set usando "omp for collapse(2) nowait":
 |           4 |     0.534 |
 
 Melhor estrategia: usar taskloop
+
+** TODO Otimizar sobel filter
+
+Resultado no test set usando taskloops:
+| no. threads | tempo (s) |
+|-------------+-----------|
+|           1 |      8.32 |
+|           2 |      5.25 |
+|           3 |      4.03 |
+|           4 |      3.39 |
+
+Resultado no test set usando for loops:
