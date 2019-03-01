@@ -1,4 +1,4 @@
-* TODO Otimizar openmp
+* DONE Otimizar openmp
 ** DONE Otimizar blur filter
 *** DONE Registrar tempo do algoritmo sequencial em uma imagem e em varias imagens
     CLOSED: [2019-02-27 mer. 00:26]
@@ -43,6 +43,8 @@ Tempo para uma imagem (1.gif) com scheduling guiado (guided):
   
 Podemos dizer que o speed-up foi de 1.77 / 0.48 = 3.7 para o blur filter.
 
+Conclusao: usar taskloops com scheduling par default ou "omp for" com scheduling guiado.
+
 ** DONE Otimizar gray filter
 
 Resultados em 1 imagem (1.gif) usando taskloops:
@@ -77,9 +79,9 @@ Resultados no test set usando "omp for collapse(2) nowait":
 |           3 |     0.641 |
 |           4 |     0.534 |
 
-Melhor estrategia: usar taskloop
+Conclusao: usar taskloops com scheduling par default.
 
-** TODO Otimizar sobel filter
+** DONE Otimizar sobel filter
 
 Resultado no test set usando taskloops:
 | no. threads | tempo (s) |
@@ -96,3 +98,8 @@ Resultado no test set usando for loops:
 |           2 |      4.33 |
 |           3 |      2.96 |
 |           4 |      2.30 |
+
+Conclusao: usar for loops com scheduling par default.
+
+Bom argumento para a soutenance da escolha da divisao de imagens
+em linhas: dividir em linhas eh mais cache-friendly do que em retangulos.
