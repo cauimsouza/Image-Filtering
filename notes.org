@@ -90,3 +90,9 @@ Resultado no test set usando taskloops:
 |           4 |      3.39 |
 
 Resultado no test set usando for loops:
+| no. threads | tempo (s) |
+|-------------+-----------|
+|           1 |      8.09 |
+|           2 |      4.33 |
+|           3 |      2.96 |
+|           4 |      2.30 |

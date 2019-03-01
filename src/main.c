@@ -771,28 +771,19 @@ apply_sobel_filter( animated_gif * image )
 {
   int width = image->width[0],
     height = image->height[0];
+  int i;
 
   pixel **p = image->p;
-#pragma omp parallel default(none) \
-  shared(image, width, height, p)
-  {
-
-    #pragma omp single
+  pixel *sobel = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+  for ( i = 0 ; i < image->n_images ; i++ )
     {
-      int i;
-
-      for ( i = 0 ; i < image->n_images ; i++ )
+#pragma omp parallel default(none) \
+  shared(image, width, height, p, sobel, i)
       {
-#pragma omp task default(none) \
-  shared(width, height, p) firstprivate(i)
-	{
-	    pixel * sobel;
 	    int j, k;
 
-	    sobel = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
 
-#pragma omp taskloop nogroup default(none) \
-  shared(width, height, p, sobel) firstprivate(i, k)
+#pragma omp for nowait collapse(2)
 	    for(j=1; j<height-1; j++)
 		{
 		for(k=1; k<width-1; k++)
@@ -836,8 +827,7 @@ apply_sobel_filter( animated_gif * image )
 		    }
 		}
 
-#pragma omp taskloop nogroup default(none) \
-  shared(width, height, p, sobel) firstprivate(i, k)
+#pragma omp for nowait collapse(2)
 	    for(j=1; j<height-1; j++)
 		{
 		for(k=1; k<width-1; k++)
@@ -848,13 +838,9 @@ apply_sobel_filter( animated_gif * image )
 		    }
 		}
 
-	    #pragma omp taskwait
-	    
-	    free (sobel) ;
-	}
-      }
+      }    
     }
-  }
+  free (sobel) ;
 }
 
 int main( int argc, char ** argv )
