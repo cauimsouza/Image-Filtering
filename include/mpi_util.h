@@ -7,7 +7,7 @@
 extern int mpi_rank;
 extern int mpi_size;
 
-void mpi_util_init();
+void mpi_util_init(animated_gif *image);
 void dungeon_master_to_masters(animated_gif *image);
 void masters_to_slaves(animated_gif *image);
 void slaves_to_masters(animated_gif *image);

@@ -66,7 +66,7 @@ int main( int argc, char ** argv )
     image->g = NULL;
   }
 
-  mpi_util_init();
+  mpi_util_init(image);
 
   dungeon_master_to_masters(image);
   masters_to_slaves(image);

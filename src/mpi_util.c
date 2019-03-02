@@ -19,11 +19,6 @@ static void create_dt_pixel()
   MPI_Type_commit(&dt_pixel);
 }
 
-void mpi_util_init()
-{
-  create_dt_pixel();
-}
-
 static void create_comms(int n_comms)
 {
   int color = mpi_rank % n_comms;
@@ -32,29 +27,39 @@ static void create_comms(int n_comms)
   MPI_Comm_size(gcomm, &gsize);
 }
 
-static int is_master(int n_comms) {
-  return mpi_rank < n_comms;
-}
-
-static int get_npixels(animated_gif *image, int id) {
-  return image->width[id] * image->height[id];
-}
-
 /* Broadcasts metadata */
 static void bcast_meta(animated_gif *image)
 {
   MPI_Bcast(&image->n_images, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-  create_comms(image->n_images);
-
   if (mpi_rank != 0)
     {
+      image->p = (pixel**) malloc(image->n_images * sizeof(pixel*));
+      int i;
+      for (i = 0; i < image->n_images; i++)
+	image->p[i] = NULL;
+
       image->width = (int*) malloc(image->n_images * sizeof(int));
       image->height = (int*) malloc(image->n_images * sizeof(int));
     }
 
   MPI_Bcast(image->width, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
   MPI_Bcast(image->height, image->n_images, MPI_INT, 0, MPI_COMM_WORLD);
+}
+
+void mpi_util_init(animated_gif *image)
+{
+  create_dt_pixel();
+  bcast_meta(image);
+  create_comms(image->n_images);
+}
+
+static int is_master(int n_comms) {
+  return grank == 0;
+}
+
+static int get_npixels(animated_gif *image, int id) {
+  return image->width[id] * image->height[id];
 }
 
 /* Each master distributes its image to all the members of its group */
@@ -65,11 +70,8 @@ void masters_to_slaves(animated_gif *image)
       int image_id = mpi_rank % image->n_images;
       int npixels = get_npixels(image, image_id);
 
-      if (!is_master(image->n_images) && !image->p)
-	{
-	  image->p = (pixel**) malloc(image->n_images * sizeof(pixel*));
-	  image->p[image_id] = (pixel*) malloc(npixels * sizeof(pixel));
-	}
+      if (!is_master(image->n_images) && !image->p[image_id])
+	image->p[image_id] = (pixel*) malloc(npixels * sizeof(pixel));
 
       MPI_Bcast(image->p[image_id], npixels, dt_pixel, 0, gcomm);
     }
@@ -78,13 +80,10 @@ void masters_to_slaves(animated_gif *image)
 /* Dungeon master distributes gif to all masters */
 void dungeon_master_to_masters(animated_gif *image)
 {
-  bcast_meta(image);
-
   /* Distribute images to masters */
   if (is_master(image->n_images) && mpi_rank > 0)
     {
       MPI_Status status;
-      image->p = (pixel**) malloc(image->n_images * sizeof(pixel*));
       int i;
       for (i = mpi_rank; i < image->n_images; i += mpi_size)
 	{
@@ -92,7 +91,8 @@ void dungeon_master_to_masters(animated_gif *image)
 	  image->p[i] = (pixel*) malloc(npixels * sizeof(pixel));
 	  MPI_Recv(image->p[i], npixels, dt_pixel, 0, 0, MPI_COMM_WORLD, &status);
         }
-    } else if (mpi_rank == 0)
+    }
+  else if (mpi_rank == 0)
     {
       int i;
       for (i = 0; i < image->n_images; i++)
