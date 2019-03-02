@@ -498,17 +498,6 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
                 }
             }
 
-	  /* Copy the middle part of the image */
-	  for(j=height/10-size; j<height*0.9+size; j++)
-            {
-	      for(k=size; k<width-size; k++)
-                {
-		  new[CONV(j,k,width)].r = p[i][CONV(j,k,width)].r ; 
-		  new[CONV(j,k,width)].g = p[i][CONV(j,k,width)].g ; 
-		  new[CONV(j,k,width)].b = p[i][CONV(j,k,width)].b ; 
-                }
-            }
-
 	  /* Apply blur on the bottom part of the image (10%) */
 	  for(j=lower_bound; j<height-size; j++)
             {
@@ -593,8 +582,6 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
 
         }
       while ( threshold > 0 && !end ) ;
-
-      // printf( "Nb iter for image %d\n", n_iter ) ;
 
       free (new) ;
     }
