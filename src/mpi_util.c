@@ -286,6 +286,24 @@ static void get_sdispls(int *result) {
     result[i] = 0;
 }
 
+static void get_recvcounts(int width, int height, int size,
+			  int lower_bound, int upper_bound, int *recvcounts)
+{
+  int bottom = grank % 2;
+  int n_pixels_total;
+  if (bottom)
+      n_pixels_total = (height - size - lower_bound) * width;
+  else
+      n_pixels_total = (upper_bound - size) * width;
+
+    int slice_size = n_pixels_total / bsize;
+
+    int i;
+    for (i = 0; i < bsize - 1; i++)
+    recvcounts[i] = slice_size;
+    recvcounts[bsize - 1] = n_pixels_total - (bsize - 1) * slice_size;
+}
+
 void
 mpi_apply_blur_filter( animated_gif * image, int size, int threshold )
 {
