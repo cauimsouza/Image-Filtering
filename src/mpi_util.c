@@ -271,6 +271,13 @@ static void calculate_domain(int width, int height, int size,
   assert(*first_pixel >= 0);
   assert(*first_pixel + *n_pixels <= width * height);
 }
+
+static void offset_to_row_col(int offset, int width, int *row, int *col)
+{
+  *row = offset / width;
+  *col = offset - (*row) * width;
+}
+
 void
 mpi_apply_blur_filter( animated_gif * image, int size, int threshold )
 {
