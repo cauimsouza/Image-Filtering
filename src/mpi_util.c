@@ -276,6 +276,9 @@ static void offset_to_row_col(int offset, int width, int *row, int *col)
 {
   *row = offset / width;
   *col = offset - (*row) * width;
+static void get_sendcounts(int n_pixels, int *result) {
+  for (int i = 0; i < bsize; i++)
+    result[i] = n_pixels;
 }
 
 void
