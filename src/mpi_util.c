@@ -10,6 +10,9 @@
 #define CONV(l,c,nb_c)				\
   (l)*(nb_c)+(c)
 
+#define ROW(offset, width) ((offset) / (width))
+#define COL(offset, width) ((offset) % (width))
+
 static MPI_Datatype dt_pixel;
 static MPI_Comm gcomm, bcomm;
 static int grank, gsize, brank, bsize;
@@ -272,10 +275,6 @@ static void calculate_domain(int width, int height, int size,
   assert(*first_pixel + *n_pixels <= width * height);
 }
 
-static void offset_to_row_col(int offset, int width, int *row, int *col)
-{
-  *row = offset / width;
-  *col = offset - (*row) * width;
 static void get_sendcounts(int n_pixels, int *result) {
   for (int i = 0; i < bsize; i++)
     result[i] = n_pixels;
@@ -287,21 +286,21 @@ static void get_sdispls(int *result) {
 }
 
 static void get_recvcounts(int width, int height, int size,
-			  int lower_bound, int upper_bound, int *recvcounts)
+			   int lower_bound, int upper_bound, int *recvcounts)
 {
   int bottom = grank % 2;
   int n_pixels_total;
   if (bottom)
-      n_pixels_total = (height - size - lower_bound) * width;
+    n_pixels_total = (height - size - lower_bound) * width;
   else
-      n_pixels_total = (upper_bound - size) * width;
+    n_pixels_total = (upper_bound - size) * width;
 
-    int slice_size = n_pixels_total / bsize;
+  int slice_size = n_pixels_total / bsize;
 
-    int i;
-    for (i = 0; i < bsize - 1; i++)
+  int i;
+  for (i = 0; i < bsize - 1; i++)
     recvcounts[i] = slice_size;
-    recvcounts[bsize - 1] = n_pixels_total - (bsize - 1) * slice_size;
+  recvcounts[bsize - 1] = n_pixels_total - (bsize - 1) * slice_size;
 }
 
 static void get_rdispls(int width, int size, int lower_bound, int *recvcounts, int *rdispls)
@@ -313,201 +312,275 @@ static void get_rdispls(int width, int size, int lower_bound, int *recvcounts, i
   else
     offset = size * width;
 
-    int i;
-    for (i = 0; i < bsize - 1; i++)
-      {
+  int i;
+  for (i = 0; i < bsize - 1; i++)
+    {
       rdispls[i] = offset;
       offset += recvcounts[i];
-      }
-    rdispls[bsize - 1] = offset;
+    }
+  rdispls[bsize - 1] = offset;
 }
 
-void
-mpi_apply_blur_filter( animated_gif * image, int size, int threshold )
+static void blur_filter_parallel(animated_gif * image, int size, int threshold)
 {
+  create_blur_comm();
+  int bottom = grank % 2;
 
+  int image_id = mpi_rank % image->n_images;
+
+  pixel *p = image->p[image_id];
+
+  int width = image->width[image_id],
+    height = image->height[image_id];
+  pixel *new = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+
+  int upper_bound = height / 10 - size; // this line is NOT treated
+  int lower_bound = height * 0.9 + size; // this line IS treated
+
+  int first_pixel, n_pixels;
+  calculate_domain(width, height, size, lower_bound, upper_bound, &first_pixel, &n_pixels);
+
+  int *sendcounts = (int*) malloc(bsize * sizeof(int));
+  get_sendcounts(n_pixels, sendcounts);
+
+  int *sdispls = (int*) malloc(bsize * sizeof(int));
+  get_sdispls(sdispls);
+
+  int *recvcounts = (int*) malloc(bsize * sizeof(int));
+  get_recvcounts(width, height, size, lower_bound, upper_bound, recvcounts);
+
+  int *rdispls = (int*) malloc(bsize * sizeof(int));
+  get_rdispls(width, size, lower_bound, recvcounts, rdispls);
+
+  int end = 0 ;
+  do
+    {
+      end = 1 ;
+
+      int i;
+      for (i = 0; i < n_pixels; i++)
+	{
+	  int of = first_pixel + i;
+	  int j = ROW(of, width);
+	  int k = COL(of, width);
+	  if (k < size || k >= width - size)
+	    continue;
+
+	  int stencil_j, stencil_k ;
+	  int t_r = 0 ;
+	  int t_g = 0 ;
+	  int t_b = 0 ;
+
+	  for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
+	    {
+	      for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
+		{
+		  t_r += p[CONV(j+stencil_j,k+stencil_k,width)].r ;
+		  t_g += p[CONV(j+stencil_j,k+stencil_k,width)].g ;
+		  t_b += p[CONV(j+stencil_j,k+stencil_k,width)].b ;
+		}
+	    }
+
+	  new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
+	  new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
+	  new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
+	}
+
+      for (i = 0; i < n_pixels; i++)
+	{
+	  int of = first_pixel + of;
+	  int j = ROW(of, width);
+	  int k = COL(of, width);
+	  if (k < size || k >= width - size)
+	    continue;
+
+	  float diff_r ;
+	  float diff_g ;
+	  float diff_b ;
+
+	  diff_r = (new[CONV(j  ,k  ,width)].r - p[CONV(j  ,k  ,width)].r) ;
+	  diff_g = (new[CONV(j  ,k  ,width)].g - p[CONV(j  ,k  ,width)].g) ;
+	  diff_b = (new[CONV(j  ,k  ,width)].b - p[CONV(j  ,k  ,width)].b) ;
+
+	  if ( diff_r > threshold || -diff_r > threshold 
+	       ||
+	       diff_g > threshold || -diff_g > threshold
+	       ||
+	       diff_b > threshold || -diff_b > threshold
+	       ) {
+	    end = 0 ;
+	  }
+
+	  p[CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
+	  p[CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
+	  p[CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
+	}
+
+      MPI_Alltoallv(&p[first_pixel], sendcounts, sdispls, dt_pixel, p, recvcounts, rdispls, dt_pixel, bcomm);
+
+      MPI_Allreduce(&end, &end, 1, MPI_INT, MPI_LAND, gcomm);
+    }
+  while (threshold > 0 && !end) ;
+
+  free (new) ;
+
+  free(sendcounts);
+  free(sdispls);
+  free(recvcounts);
+  free(rdispls);
+
+  /* 
+     fills the missing part of one group with the filtered part of the other group.
+     The processes with grank 0 and 1 have necessarily treated different parts of
+     the image.
+  */
+  MPI_Bcast(&p[size * width], (upper_bound - size) * width, dt_pixel, 0, gcomm);
+  MPI_Bcast(&p[lower_bound * width], (height - size - lower_bound) * width, dt_pixel, 1, gcomm);
+}
+
+static void blur_filter_sequential(animated_gif * image, int size, int threshold)
+{
   int i, j, k ;
+  int width, height ;
+  int end = 0 ;
+  int n_iter = 0 ;
 
-  pixel **p = image->p;
+  pixel ** p ;
+  pixel * new ;
+
+  /* Get the pixels of all images */
+  p = image->p ;
+
 
   /* Process all images */
-  for ( i = mpi_rank % image->n_images ; i < image->n_images ; i += mpi_size)
+  for ( i = mpi_rank ; i < image->n_images ; i += mpi_size)
     {
-      int width = image->width[i],
-	height = image->height[i];
-      pixel *new = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+      n_iter = 0 ;
+      width = image->width[i] ;
+      height = image->height[i] ;
 
-      if (gsize > 1) {
-	int n_pixels = get_npixels(image, i);
-	MPI_Status status;
-	assert(p[i] != NULL);
+      /* Allocate array of new pixels */
+      new = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
 
-	if (grank > 0)
-	    MPI_Recv(p[i], n_pixels, dt_pixel, 0, 0, gcomm, &status);
-	else
-	    MPI_Send(p[i], n_pixels, dt_pixel, 1, 0, gcomm);
-      }
+      int upper_bound = height / 10 - size; // this line is NOT treated 
+      int lower_bound = height * 0.9 + size; // this line IS treated
 
-      int upper_bound = height / 10 - size;
-      int lower_bound = height * 0.9 + size;
-      int end = 0 ;
+      /* Perform at least one blur iteration */
       do
         {
 	  end = 1 ;
+	  n_iter++ ;
 
 	  /* Apply blur on top part of image (10%) */
-	  if (grank == 0)
-	    for(j=size; j<upper_bound; j++)
-	      {
-		for(k=size; k<width-size; k++)
-		  {
-		    int stencil_j, stencil_k ;
-		    int t_r = 0 ;
-		    int t_g = 0 ;
-		    int t_b = 0 ;
+	  for(j=size; j<height/10-size; j++)
+            {
+	      for(k=size; k<width-size; k++)
+                {
+		  int stencil_j, stencil_k ;
+		  int t_r = 0 ;
+		  int t_g = 0 ;
+		  int t_b = 0 ;
 
-		    for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
-		      {
-			for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
-			  {
-			    t_r += p[i][CONV(j+stencil_j,k+stencil_k,width)].r ;
-			    t_g += p[i][CONV(j+stencil_j,k+stencil_k,width)].g ;
-			    t_b += p[i][CONV(j+stencil_j,k+stencil_k,width)].b ;
-			  }
-		      }
+		  for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
+                    {
+		      for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
+                        {
+			  t_r += p[i][CONV(j+stencil_j,k+stencil_k,width)].r ;
+			  t_g += p[i][CONV(j+stencil_j,k+stencil_k,width)].g ;
+			  t_b += p[i][CONV(j+stencil_j,k+stencil_k,width)].b ;
+                        }
+                    }
 
-		    new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
-		    new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
-		    new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
+		  new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
+		  new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
+		  new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
+                }
+            }
+
+	  /* Copy the middle part of the image */
+	  for(j=height/10-size; j<height*0.9+size; j++)
+            {
+	      for(k=size; k<width-size; k++)
+                {
+		  new[CONV(j,k,width)].r = p[i][CONV(j,k,width)].r ; 
+		  new[CONV(j,k,width)].g = p[i][CONV(j,k,width)].g ; 
+		  new[CONV(j,k,width)].b = p[i][CONV(j,k,width)].b ; 
+                }
+            }
+
+	  /* Apply blur on the bottom part of the image (10%) */
+	  for(j=height*0.9+size; j<height-size; j++)
+            {
+	      for(k=size; k<width-size; k++)
+                {
+		  int stencil_j, stencil_k ;
+		  int t_r = 0 ;
+		  int t_g = 0 ;
+		  int t_b = 0 ;
+
+		  for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
+                    {
+		      for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
+                        {
+			  t_r += p[i][CONV(j+stencil_j,k+stencil_k,width)].r ;
+			  t_g += p[i][CONV(j+stencil_j,k+stencil_k,width)].g ;
+			  t_b += p[i][CONV(j+stencil_j,k+stencil_k,width)].b ;
+                        }
+                    }
+
+		  new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
+		  new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
+		  new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
+                }
+            }
+
+	  for(j=1; j<height-1; j++)
+            {
+	      for(k=1; k<width-1; k++)
+                {
+
+		  float diff_r ;
+		  float diff_g ;
+		  float diff_b ;
+
+		  diff_r = (new[CONV(j  ,k  ,width)].r - p[i][CONV(j  ,k  ,width)].r) ;
+		  diff_g = (new[CONV(j  ,k  ,width)].g - p[i][CONV(j  ,k  ,width)].g) ;
+		  diff_b = (new[CONV(j  ,k  ,width)].b - p[i][CONV(j  ,k  ,width)].b) ;
+
+		  if ( diff_r > threshold || -diff_r > threshold 
+		       ||
+		       diff_g > threshold || -diff_g > threshold
+		       ||
+		       diff_b > threshold || -diff_b > threshold
+                       ) {
+		    end = 0 ;
 		  }
-	      }
 
+		  p[i][CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
+		  p[i][CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
+		  p[i][CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
+                }
+            }
 
-	  /* Apply blur on bottom part of the image (10%) */
-	  if (gsize == 1 || grank > 0)
-	    for(j=lower_bound; j<height-size; j++)
-	      {
-		for(k=size; k<width-size; k++)
-		  {
-		    int stencil_j, stencil_k ;
-		    int t_r = 0 ;
-		    int t_g = 0 ;
-		    int t_b = 0 ;
-
-		    for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
-		      {
-			for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
-			  {
-			    t_r += p[i][CONV(j+stencil_j,k+stencil_k,width)].r ;
-			    t_g += p[i][CONV(j+stencil_j,k+stencil_k,width)].g ;
-			    t_b += p[i][CONV(j+stencil_j,k+stencil_k,width)].b ;
-			  }
-		      }
-
-		    new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
-		    new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
-		    new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
-		  }
-	      }
-
-
-
-	  /* copy top 10% of image */
-	  if (grank == 0)
-	    {
-	      for(j=size; j<upper_bound; j++)
-		{
-		  for(k=size; k<width-size; k++)
-		    {
-		      float diff_r ;
-		      float diff_g ;
-		      float diff_b ;
-
-		      diff_r = (new[CONV(j  ,k  ,width)].r - p[i][CONV(j  ,k  ,width)].r) ;
-		      diff_g = (new[CONV(j  ,k  ,width)].g - p[i][CONV(j  ,k  ,width)].g) ;
-		      diff_b = (new[CONV(j  ,k  ,width)].b - p[i][CONV(j  ,k  ,width)].b) ;
-
-		      if ( diff_r > threshold || -diff_r > threshold 
-			   ||
-			   diff_g > threshold || -diff_g > threshold
-			   ||
-			   diff_b > threshold || -diff_b > threshold
-			   ) {
-			end = 0 ;
-		      }
-
-		      p[i][CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
-		      p[i][CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
-		      p[i][CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
-		    }
-		}
-	    }
-
-
-
-	  /* copy bottom 10% of image */
-	  if (gsize == 1 || grank > 0)
-	    {
-	      for(j=lower_bound; j<height-size; j++)
-		{
-		  for(k=size; k<width-size; k++)
-		    {
-
-		      float diff_r ;
-		      float diff_g ;
-		      float diff_b ;
-
-		      diff_r = (new[CONV(j  ,k  ,width)].r - p[i][CONV(j  ,k  ,width)].r) ;
-		      diff_g = (new[CONV(j  ,k  ,width)].g - p[i][CONV(j  ,k  ,width)].g) ;
-		      diff_b = (new[CONV(j  ,k  ,width)].b - p[i][CONV(j  ,k  ,width)].b) ;
-
-		      if ( diff_r > threshold || -diff_r > threshold 
-			   ||
-			   diff_g > threshold || -diff_g > threshold
-			   ||
-			   diff_b > threshold || -diff_b > threshold
-			   ) {
-			end = 0 ;
-		      }
-
-		      p[i][CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
-		      p[i][CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
-		      p[i][CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
-		    }
-		}
-	    }
-
-
-	  if (gsize > 1) {
-	    int other_end;
-	    MPI_Status status;
-	    if (grank > 0) {
-	      MPI_Send(&end, 1, MPI_INT, 0, 0, gcomm);
-	      MPI_Recv(&other_end, 1, MPI_INT, 0, 0, gcomm, &status);
-	    }
-	    else {
-	      MPI_Recv(&other_end, 1, MPI_INT, 1, 0, gcomm, &status);
-	      MPI_Send(&end, 1, MPI_INT, 1, 0, gcomm);
-	    }
-	    end &= other_end;
-	  }
         }
       while ( threshold > 0 && !end ) ;
 
+      // printf( "Nb iter for image %d\n", n_iter ) ;
 
-      if (gsize > 1) {
-	int start_line = lower_bound;
-	int n_pixels = (height - start_line) * width;
-	MPI_Status status;
-	if (grank > 0)
-	    MPI_Send(&p[i][start_line * width], n_pixels, dt_pixel, 0, 0, gcomm);
-	else
-	    MPI_Recv(&p[i][start_line * width], n_pixels, dt_pixel, 1, 0, gcomm, &status);
-      }
       free (new) ;
     }
+}
 
-
+/* Applies blur filter on image. Supposes every MPI process
+   has a copy of the images corresponding to its group.
+*/
+void
+mpi_apply_blur_filter( animated_gif * image, int size, int threshold )
+{
+  if (gsize > 1)
+    blur_filter_parallel(image, size, threshold);
+  else
+    blur_filter_sequential(image, size, threshold);
 }
 
 void mpi_apply_sobel_filter( animated_gif * image )
