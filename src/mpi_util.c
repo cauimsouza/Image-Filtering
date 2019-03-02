@@ -11,8 +11,8 @@
   (l)*(nb_c)+(c)
 
 static MPI_Datatype dt_pixel;
-static MPI_Comm gcomm;
-static int grank, gsize;
+static MPI_Comm gcomm, bcomm;
+static int grank, gsize, brank, bsize;
 
 static void create_dt_pixel()
 {
@@ -227,6 +227,15 @@ mpi_apply_gray_filter( animated_gif * image )
 	  p[i][j].b = moy ;
         }
     }
+}
+
+/* Create communicators for blur filter processing */
+void create_blur_comm()
+{
+  int color = grank % 2;
+  MPI_Comm_split(gcomm, color, grank, &bcomm);
+  MPI_Comm_rank(bcomm, &brank);
+  MPI_Comm_size(bcomm, &bsize);
 }
 
 void
