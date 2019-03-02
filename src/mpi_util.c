@@ -238,10 +238,42 @@ void create_blur_comm()
   MPI_Comm_size(bcomm, &bsize);
 }
 
+/* Calculates region on which the process should work.
+   first_pixel is an offset from the first pixel of the image,
+   n_pixels is the number of pixels of the image for which the
+   process is responsable.
+*/
+static void calculate_domain(int width, int height, int size,
+			     int lower_bound, int upper_bound,
+			     int *first_pixel, int *n_pixels)
+{
+  int bottom = grank % 2;
+  if (bottom)
+    {
+      int n_pixels_total = (height - size - lower_bound) * width;
+      int slice_size = n_pixels_total / bsize;
+      *first_pixel = brank * slice_size + lower_bound * width;
+      *n_pixels = slice_size;
+      if (brank == bsize - 1)
+	*n_pixels = n_pixels_total - (bsize - 1) * slice_size;
+    }
+  else
+    {
+      int n_pixels_total = (upper_bound - size) * width;
+      int slice_size = n_pixels_total / bsize;
+      *first_pixel = brank * slice_size;
+      *n_pixels = slice_size;
+      if (brank == bsize - 1)
+	*n_pixels = n_pixels_total - (bsize - 1) * slice_size;
+    }
+
+  assert(*n_pixels > 0);
+  assert(*first_pixel >= 0);
+  assert(*first_pixel + *n_pixels <= width * height);
+}
 void
 mpi_apply_blur_filter( animated_gif * image, int size, int threshold )
 {
-  if (!is_master(image->n_images) && grank != 1) return;
 
   int i, j, k ;
 
