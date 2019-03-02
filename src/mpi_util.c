@@ -264,7 +264,7 @@ static void calculate_domain(int width, int height, int size,
     {
       int n_pixels_total = (upper_bound - size) * width;
       int slice_size = n_pixels_total / bsize;
-      *first_pixel = brank * slice_size;
+      *first_pixel = brank * slice_size + size * width;
       *n_pixels = slice_size;
       if (brank == bsize - 1)
 	*n_pixels = n_pixels_total - (bsize - 1) * slice_size;
@@ -388,7 +388,7 @@ static void blur_filter_parallel(animated_gif * image, int size, int threshold)
 
       for (i = 0; i < n_pixels; i++)
 	{
-	  int of = first_pixel + of;
+	  int of = first_pixel + i;
 	  int j = ROW(of, width);
 	  int k = COL(of, width);
 	  if (k < size || k >= width - size)
@@ -418,7 +418,8 @@ static void blur_filter_parallel(animated_gif * image, int size, int threshold)
 
       MPI_Alltoallv(&p[first_pixel], sendcounts, sdispls, dt_pixel, p, recvcounts, rdispls, dt_pixel, bcomm);
 
-      MPI_Allreduce(&end, &end, 1, MPI_INT, MPI_LAND, gcomm);
+      int my_end = end;
+      MPI_Allreduce(&my_end, &end, 1, MPI_INT, MPI_LAND, gcomm);
     }
   while (threshold > 0 && !end) ;
 
@@ -472,7 +473,7 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
 	  n_iter++ ;
 
 	  /* Apply blur on top part of image (10%) */
-	  for(j=size; j<height/10-size; j++)
+	  for(j=size; j<upper_bound; j++)
             {
 	      for(k=size; k<width-size; k++)
                 {
@@ -509,7 +510,7 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
             }
 
 	  /* Apply blur on the bottom part of the image (10%) */
-	  for(j=height*0.9+size; j<height-size; j++)
+	  for(j=lower_bound; j<height-size; j++)
             {
 	      for(k=size; k<width-size; k++)
                 {
@@ -534,9 +535,37 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
                 }
             }
 
-	  for(j=1; j<height-1; j++)
+	  for(j = size; j < upper_bound; j++)
             {
-	      for(k=1; k<width-1; k++)
+	      for(k = size; k < width - size; k++)
+                {
+
+		  float diff_r ;
+		  float diff_g ;
+		  float diff_b ;
+
+		  diff_r = (new[CONV(j  ,k  ,width)].r - p[i][CONV(j  ,k  ,width)].r) ;
+		  diff_g = (new[CONV(j  ,k  ,width)].g - p[i][CONV(j  ,k  ,width)].g) ;
+		  diff_b = (new[CONV(j  ,k  ,width)].b - p[i][CONV(j  ,k  ,width)].b) ;
+
+		  if ( diff_r > threshold || -diff_r > threshold 
+		       ||
+		       diff_g > threshold || -diff_g > threshold
+		       ||
+		       diff_b > threshold || -diff_b > threshold
+                       ) {
+		    end = 0 ;
+		  }
+
+		  p[i][CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
+		  p[i][CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
+		  p[i][CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
+                }
+            }
+
+	  for(j = lower_bound; j < height - size; j++)
+            {
+	      for(k = size; k < width - size; k++)
                 {
 
 		  float diff_r ;
