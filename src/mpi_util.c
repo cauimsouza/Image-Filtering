@@ -281,6 +281,11 @@ static void get_sendcounts(int n_pixels, int *result) {
     result[i] = n_pixels;
 }
 
+static void get_sdispls(int *result) {
+  for (int i = 0; i < bsize; i++)
+    result[i] = 0;
+}
+
 void
 mpi_apply_blur_filter( animated_gif * image, int size, int threshold )
 {
