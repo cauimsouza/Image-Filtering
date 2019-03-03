@@ -202,7 +202,7 @@ void masters_to_dungeon_master(animated_gif *image)
     }
 }
 
-static void gray_filter_multi_images(animated_gif * image)
+void mpi_apply_gray_filter(animated_gif * image)
 {
 
 #pragma omp parallel default(none) shared(image, mpi_rank, mpi_size)
@@ -220,12 +220,13 @@ static void gray_filter_multi_images(animated_gif * image)
 	  pixel *p = image->p[i];
 	  int width = image->width[i];
 	  int j;
+#pragma omp taskloop default(none) nogroup \
+  firstprivate(p)
 	  for ( j = first_line * width; j < (last_line + 1) * width ; j++ )
 
 	    {
 	      int moy ;
 
-	      // moy = p[i][j].r/4 + ( p[i][j].g * 3/4 ) ;
 	      moy = (p[j].r + p[j].g + p[j].b)/3 ;
 	      if ( moy < 0 ) moy = 0 ;
 	      if ( moy > 255 ) moy = 255 ;
@@ -237,46 +238,6 @@ static void gray_filter_multi_images(animated_gif * image)
 	}
     }
   }
-}
-
-static void gray_filter_single_image(animated_gif * image)
-{
-#pragma omp parallel default(none) shared(image, mpi_rank)
-  {
-#pragma omp single
-    {
-      int image_id = mpi_rank % image->n_images;
-      int j;
-      int first_line, last_line;
-      get_first_last_lines(image, image_id, &first_line, &last_line);
-
-      pixel *p = image->p[image_id];
-      int width = image->width[image_id];
-#pragma omp taskloop default(none) nogroup	\
-  firstprivate(p)
-      for ( j = first_line * width; j < (last_line + 1) * width ; j++ )
-        {
-	  int moy ;
-
-	  moy = (p[j].r + p[j].g + p[j].b)/3 ;
-	  if ( moy < 0 ) moy = 0 ;
-	  if ( moy > 255 ) moy = 255 ;
-
-	  p[j].r = moy ;
-	  p[j].g = moy ;
-	  p[j].b = moy ;
-        }
-    }
-  }
-}
-
-void
-mpi_apply_gray_filter( animated_gif * image )
-{
-  if (image->n_images >= mpi_size)
-    gray_filter_multi_images(image);
-  else
-    gray_filter_single_image(image);
 }
 
 /* Create communicators for blur filter processing */
