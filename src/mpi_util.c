@@ -220,7 +220,7 @@ void mpi_apply_gray_filter(animated_gif * image)
 	  pixel *p = image->p[i];
 	  int width = image->width[i];
 	  int j;
-#pragma omp taskloop default(none) nogroup \
+#pragma omp taskloop default(none) nogroup	\
   firstprivate(p)
 	  for ( j = first_line * width; j < (last_line + 1) * width ; j++ )
 
@@ -480,7 +480,7 @@ static void blur_filter_parallel_threaded(animated_gif * image, int size, int th
 
   int end = 0 ;
 #pragma omp parallel default(shared)
-  #pragma omp master
+#pragma omp master
   do
     {
       end = 1 ;
@@ -573,160 +573,160 @@ static void blur_filter_parallel_threaded(animated_gif * image, int size, int th
 static void blur_filter_sequential(animated_gif * image, int size, int threshold)
 {
 
-#pragma omp parallel default(none) \
+#pragma omp parallel default(none)			\
   shared(mpi_rank, mpi_size, image, size, threshold)
   {
     int i;
 
-  /* Process all images */
+    /* Process all images */
 #pragma omp single
 #pragma omp taskloop nogroup default(none) shared(image, size, threshold)
-  for ( i = mpi_rank ; i < image->n_images ; i += mpi_size)
-    {
-      int j, k;
-      int end = 0 ;
-      int width = image->width[i],
-	height = image->height[i];
-      pixel *p = image->p[i] ;
+    for ( i = mpi_rank ; i < image->n_images ; i += mpi_size)
+      {
+	int j, k;
+	int end = 0 ;
+	int width = image->width[i],
+	  height = image->height[i];
+	pixel *p = image->p[i] ;
 
-      width = image->width[i] ;
-      height = image->height[i] ;
+	width = image->width[i] ;
+	height = image->height[i] ;
 
-      /* Allocate array of new pixels */
-      pixel *new = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+	/* Allocate array of new pixels */
+	pixel *new = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
 
-      int upper_bound = height / 10 - size; // this line is NOT treated 
-      int lower_bound = height * 0.9 + size; // this line IS treated
+	int upper_bound = height / 10 - size; // this line is NOT treated 
+	int lower_bound = height * 0.9 + size; // this line IS treated
 
-      /* Perform at least one blur iteration */
-      do
-        {
-	  end = 1 ;
+	/* Perform at least one blur iteration */
+	do
+	  {
+	    end = 1 ;
 
-	  /* Apply blur on top part of image (10%) */
+	    /* Apply blur on top part of image (10%) */
 #pragma omp taskloop nogroup default(none) shared(width, size) firstprivate(p, new, k)
-	  for(j=size; j<upper_bound; j++)
-            {
-	      for(k=size; k<width-size; k++)
-                {
-		  int stencil_j, stencil_k ;
-		  int t_r = 0 ;
-		  int t_g = 0 ;
-		  int t_b = 0 ;
+	    for(j=size; j<upper_bound; j++)
+	      {
+		for(k=size; k<width-size; k++)
+		  {
+		    int stencil_j, stencil_k ;
+		    int t_r = 0 ;
+		    int t_g = 0 ;
+		    int t_b = 0 ;
 
-		  for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
-                    {
-		      for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
-                        {
-			  t_r += p[CONV(j+stencil_j,k+stencil_k,width)].r ;
-			  t_g += p[CONV(j+stencil_j,k+stencil_k,width)].g ;
-			  t_b += p[CONV(j+stencil_j,k+stencil_k,width)].b ;
-                        }
-                    }
+		    for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
+		      {
+			for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
+			  {
+			    t_r += p[CONV(j+stencil_j,k+stencil_k,width)].r ;
+			    t_g += p[CONV(j+stencil_j,k+stencil_k,width)].g ;
+			    t_b += p[CONV(j+stencil_j,k+stencil_k,width)].b ;
+			  }
+		      }
 
-		  new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
-		  new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
-		  new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
-                }
-            }
+		    new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
+		    new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
+		    new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
+		  }
+	      }
 
-	  /* Apply blur on the bottom part of the image (10%) */
+	    /* Apply blur on the bottom part of the image (10%) */
 #pragma omp taskloop nogroup default(none) shared(width, size) firstprivate(p, new, k)
-	  for(j=lower_bound; j<height-size; j++)
-            {
-	      for(k=size; k<width-size; k++)
-                {
-		  int stencil_j, stencil_k ;
-		  int t_r = 0 ;
-		  int t_g = 0 ;
-		  int t_b = 0 ;
+	    for(j=lower_bound; j<height-size; j++)
+	      {
+		for(k=size; k<width-size; k++)
+		  {
+		    int stencil_j, stencil_k ;
+		    int t_r = 0 ;
+		    int t_g = 0 ;
+		    int t_b = 0 ;
 
-		  for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
-                    {
-		      for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
-                        {
-			  t_r += p[CONV(j+stencil_j,k+stencil_k,width)].r ;
-			  t_g += p[CONV(j+stencil_j,k+stencil_k,width)].g ;
-			  t_b += p[CONV(j+stencil_j,k+stencil_k,width)].b ;
-                        }
-                    }
+		    for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
+		      {
+			for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
+			  {
+			    t_r += p[CONV(j+stencil_j,k+stencil_k,width)].r ;
+			    t_g += p[CONV(j+stencil_j,k+stencil_k,width)].g ;
+			    t_b += p[CONV(j+stencil_j,k+stencil_k,width)].b ;
+			  }
+		      }
 
-		  new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
-		  new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
-		  new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
-                }
-            }
+		    new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
+		    new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
+		    new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
+		  }
+	      }
 
 #pragma omp taskwait
 
-#pragma omp taskloop nogroup default(none) \
+#pragma omp taskloop nogroup default(none)			\
   shared(width, size, threshold, end) firstprivate(p, new, k)
-	  for(j = size; j < upper_bound; j++)
-            {
-	      for(k = size; k < width - size; k++)
-                {
+	    for(j = size; j < upper_bound; j++)
+	      {
+		for(k = size; k < width - size; k++)
+		  {
 
-		  float diff_r ;
-		  float diff_g ;
-		  float diff_b ;
+		    float diff_r ;
+		    float diff_g ;
+		    float diff_b ;
 
-		  diff_r = (new[CONV(j  ,k  ,width)].r - p[CONV(j  ,k  ,width)].r) ;
-		  diff_g = (new[CONV(j  ,k  ,width)].g - p[CONV(j  ,k  ,width)].g) ;
-		  diff_b = (new[CONV(j  ,k  ,width)].b - p[CONV(j  ,k  ,width)].b) ;
+		    diff_r = (new[CONV(j  ,k  ,width)].r - p[CONV(j  ,k  ,width)].r) ;
+		    diff_g = (new[CONV(j  ,k  ,width)].g - p[CONV(j  ,k  ,width)].g) ;
+		    diff_b = (new[CONV(j  ,k  ,width)].b - p[CONV(j  ,k  ,width)].b) ;
 
-		  if ( diff_r > threshold || -diff_r > threshold 
-		       ||
-		       diff_g > threshold || -diff_g > threshold
-		       ||
-		       diff_b > threshold || -diff_b > threshold
-                       ) {
+		    if ( diff_r > threshold || -diff_r > threshold 
+			 ||
+			 diff_g > threshold || -diff_g > threshold
+			 ||
+			 diff_b > threshold || -diff_b > threshold
+			 ) {
 #pragma omp atomic write
-		    end = 0 ;
+		      end = 0 ;
+		    }
+
+		    p[CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
+		    p[CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
+		    p[CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
 		  }
+	      }
 
-		  p[CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
-		  p[CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
-		  p[CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
-                }
-            }
-
-#pragma omp taskloop nogroup default(none) \
+#pragma omp taskloop nogroup default(none)			\
   shared(width, size, threshold, end) firstprivate(p, new, k)
-	  for(j = lower_bound; j < height - size; j++)
-            {
-	      for(k = size; k < width - size; k++)
-                {
+	    for(j = lower_bound; j < height - size; j++)
+	      {
+		for(k = size; k < width - size; k++)
+		  {
 
-		  float diff_r ;
-		  float diff_g ;
-		  float diff_b ;
+		    float diff_r ;
+		    float diff_g ;
+		    float diff_b ;
 
-		  diff_r = (new[CONV(j  ,k  ,width)].r - p[CONV(j  ,k  ,width)].r) ;
-		  diff_g = (new[CONV(j  ,k  ,width)].g - p[CONV(j  ,k  ,width)].g) ;
-		  diff_b = (new[CONV(j  ,k  ,width)].b - p[CONV(j  ,k  ,width)].b) ;
+		    diff_r = (new[CONV(j  ,k  ,width)].r - p[CONV(j  ,k  ,width)].r) ;
+		    diff_g = (new[CONV(j  ,k  ,width)].g - p[CONV(j  ,k  ,width)].g) ;
+		    diff_b = (new[CONV(j  ,k  ,width)].b - p[CONV(j  ,k  ,width)].b) ;
 
-		  if ( diff_r > threshold || -diff_r > threshold 
-		       ||
-		       diff_g > threshold || -diff_g > threshold
-		       ||
-		       diff_b > threshold || -diff_b > threshold
-                       ) {
-		    end = 0 ;
+		    if ( diff_r > threshold || -diff_r > threshold 
+			 ||
+			 diff_g > threshold || -diff_g > threshold
+			 ||
+			 diff_b > threshold || -diff_b > threshold
+			 ) {
+		      end = 0 ;
+		    }
+
+		    p[CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
+		    p[CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
+		    p[CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
 		  }
-
-		  p[CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
-		  p[CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
-		  p[CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
-                }
-            }
+	      }
 
 #pragma omp taskwait
 
-        }
-      while ( threshold > 0 && !end ) ;
+	  }
+	while ( threshold > 0 && !end ) ;
 
-      free (new) ;
-    }
+	free (new) ;
+      }
   }
 }
 
@@ -752,19 +752,19 @@ mpi_apply_blur_filter( animated_gif * image, int size, int threshold )
 
 void mpi_apply_sobel_filter( animated_gif * image )
 {
-  int i, j, k ;
-  int width, height ;
+  int i;
 
-  pixel ** p ;
-
-  p = image->p ;
-
+#pragma omp parallel default(none) shared(image, mpi_rank, mpi_size)
+#pragma omp single 
+#pragma omp taskloop nogroup default(none) shared(image, mpi_rank, mpi_size)
   for (i = mpi_rank % image->n_images ; i < image->n_images ; i += mpi_size)
     {
-      width = image->width[i] ;
-      height = image->height[i] ;
+      int j, k;
+      int width = image->width[i],
+	height = image->height[i] ;
 
-      pixel * sobel ;
+      pixel *p = image->p[i];
+      pixel *sobel;
 
       sobel = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
 
@@ -773,6 +773,8 @@ void mpi_apply_sobel_filter( animated_gif * image )
       if (first_line == 0) first_line++;
       if (last_line == height - 1) last_line--;
 
+#pragma omp taskloop default(none) shared(width, p, sobel, first_line, last_line) \
+  firstprivate(k)
       for(j = first_line; j <= last_line; j++)
         {
 	  for(k=1; k<width-1; k++)
@@ -785,15 +787,15 @@ void mpi_apply_sobel_filter( animated_gif * image )
 	      float deltaY_blue ;
 	      float val_blue;
 
-	      pixel_blue_no = p[i][CONV(j-1,k-1,width)].b ;
-	      pixel_blue_n  = p[i][CONV(j-1,k  ,width)].b ;
-	      pixel_blue_ne = p[i][CONV(j-1,k+1,width)].b ;
-	      pixel_blue_so = p[i][CONV(j+1,k-1,width)].b ;
-	      pixel_blue_s  = p[i][CONV(j+1,k  ,width)].b ;
-	      pixel_blue_se = p[i][CONV(j+1,k+1,width)].b ;
-	      pixel_blue_o  = p[i][CONV(j  ,k-1,width)].b ;
-	      pixel_blue    = p[i][CONV(j  ,k  ,width)].b ;
-	      pixel_blue_e  = p[i][CONV(j  ,k+1,width)].b ;
+	      pixel_blue_no = p[CONV(j-1,k-1,width)].b ;
+	      pixel_blue_n  = p[CONV(j-1,k  ,width)].b ;
+	      pixel_blue_ne = p[CONV(j-1,k+1,width)].b ;
+	      pixel_blue_so = p[CONV(j+1,k-1,width)].b ;
+	      pixel_blue_s  = p[CONV(j+1,k  ,width)].b ;
+	      pixel_blue_se = p[CONV(j+1,k+1,width)].b ;
+	      pixel_blue_o  = p[CONV(j  ,k-1,width)].b ;
+	      pixel_blue    = p[CONV(j  ,k  ,width)].b ;
+	      pixel_blue_e  = p[CONV(j  ,k+1,width)].b ;
 
 	      deltaX_blue = -pixel_blue_no + pixel_blue_ne - 2*pixel_blue_o + 2*pixel_blue_e - pixel_blue_so + pixel_blue_se;             
 
@@ -816,13 +818,14 @@ void mpi_apply_sobel_filter( animated_gif * image )
             }
         }
 
+#pragma omp taskloop default(none) shared(p, sobel, width, height) firstprivate(k)
       for(j=1; j<height-1; j++)
         {
 	  for(k=1; k<width-1; k++)
             {
-	      p[i][CONV(j  ,k  ,width)].r = sobel[CONV(j  ,k  ,width)].r ;
-	      p[i][CONV(j  ,k  ,width)].g = sobel[CONV(j  ,k  ,width)].g ;
-	      p[i][CONV(j  ,k  ,width)].b = sobel[CONV(j  ,k  ,width)].b ;
+	      p[CONV(j  ,k  ,width)].r = sobel[CONV(j  ,k  ,width)].r ;
+	      p[CONV(j  ,k  ,width)].g = sobel[CONV(j  ,k  ,width)].g ;
+	      p[CONV(j  ,k  ,width)].b = sobel[CONV(j  ,k  ,width)].b ;
             }
         }
 
