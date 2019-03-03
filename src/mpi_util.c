@@ -3,6 +3,7 @@
 #include <math.h>
 #include <mpi.h>
 #include <assert.h>
+#include <omp.h>
 
 #include <mpi_util.h>
 #include <stdio.h>
