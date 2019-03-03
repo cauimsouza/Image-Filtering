@@ -206,12 +206,10 @@ void mpi_apply_gray_filter(animated_gif * image)
 {
 
 #pragma omp parallel default(none) shared(image, mpi_rank, mpi_size)
-  {
 #pragma omp single
     {
       int i;
-#pragma omp taskloop default(none) nogroup	\
-  shared(image)
+#pragma omp taskloop default(none) nogroup shared(image)
       for ( i = mpi_rank % image->n_images ; i < image->n_images ; i += mpi_size)
 	{
 	  int first_line, last_line;
@@ -220,10 +218,8 @@ void mpi_apply_gray_filter(animated_gif * image)
 	  pixel *p = image->p[i];
 	  int width = image->width[i];
 	  int j;
-#pragma omp taskloop default(none) nogroup	\
-  firstprivate(p)
+#pragma omp taskloop default(none) nogroup firstprivate(p)
 	  for ( j = first_line * width; j < (last_line + 1) * width ; j++ )
-
 	    {
 	      int moy ;
 
@@ -237,7 +233,6 @@ void mpi_apply_gray_filter(animated_gif * image)
 	    }
 	}
     }
-  }
 }
 
 /* Create communicators for blur filter processing */
@@ -831,5 +826,4 @@ void mpi_apply_sobel_filter( animated_gif * image )
 
       free (sobel) ;
     }
-
 }
