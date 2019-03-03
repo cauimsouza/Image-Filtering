@@ -1,0 +1,54 @@
+* Otimizando MPI
+*Resultados* no test set com 15 imagens apos paralelizacao de cada filtro:
+| no. proc | tempo (s) |
+|----------+-----------|
+|        1 |     97.17 |
+|        2 |     48.32 |
+|        3 |     55.05 |
+|        4 |     32.80 |
+
+** TODO Otimizar blur filter
+Em cada um dos testes feitos apenas o filtro blur foi aplicado.
+*Estrategias*:
+*** Somente o master de cada MPI communicator aplica o blur filter.
+*Resultados*:
+test set com 15 imagens:
+| no. proc | tempo (s) |
+|----------+-----------|
+|        1 |    161.23 |
+|        2 |    148.16 |
+|        3 |    146.95 |
+|        4 |    147.31 |
+
+*** Somente os processos de grank 0 e 1 aplicam o blur filter.
+*Resultados*:
+test set com 15 imagens:
+| no. proc | tempo (s) |
+|----------+-----------|
+|        1 |    110.49 |
+|        2 |     58.64 |
+|        3 |     57.06 |
+|        4 |     57.11 |
+
+*** Cada grupo eh dividido em duas metades, uma trata a parte superior
+da imagem e a outra trata a parte inferior. A cada iteracao, somente os
+processos que tratam a mesma regiao da imagem enviam a versao atualizada
+da imagem. Todos os processos que tratam uma mesma imagem se comunicam no
+fim de cada iteracao para saber se deve continuar ou parar. No final do blur,
+entre o final do blur e o inicio do sobel nao eh necessario transmitir a versao
+atualizada da imagem para todos os processos que tratam uma mesma imagem,
+pois a metade que trata a parte de cima da imagem durante a aplicacao do filtro
+blur pode continuar a tratar da parte de cima da imagem durante a aplicacao
+do filtro sobel, e a mesma coisa para os processos que tratam a parte de baixo
+da imagem.
+*Resultados*:
+test set com 15 imagens:
+| no. proc | tempo (s) |
+|----------+-----------|
+|        1 |    116.17 |
+|        2 |     54.77 |
+|        3 |     52.60 |
+|        4 |     29.72 |
+
+Obs.: Como esperado, passando de n processos para n + 1 processos, soh a
+diferenca significativa no tempo quando n eh impar.
