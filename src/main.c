@@ -93,9 +93,7 @@ int main( int argc, char ** argv )
   duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
 
   if (mpi_rank == 0)
-    printf("%f", duration);
-  //MPI_Finalize();
-  //return 0;
+    printf("Time elapse during filter application: %f\n", duration);
 
   if (mpi_rank == 0) {
     /* FILTER Timer stop */
