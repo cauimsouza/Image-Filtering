@@ -6,6 +6,7 @@
 
 extern int mpi_rank;
 extern int mpi_size;
+extern int mpi_thread_level_provided;
 
 void mpi_util_init(animated_gif *image);
 void dungeon_master_to_masters(animated_gif *image);

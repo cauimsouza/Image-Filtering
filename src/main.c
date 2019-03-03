@@ -18,10 +18,11 @@
 
 /* MPI global variables */
 int mpi_size, mpi_rank;
+int mpi_thread_level_provided;
 
 int main( int argc, char ** argv )
 {
-  MPI_Init(&argc, &argv);
+  MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &mpi_thread_level_provided);
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
 	
@@ -53,8 +54,10 @@ int main( int argc, char ** argv )
 
     duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
 
+    /*
     printf( "GIF loaded from file %s with %d image(s) in %lf s\n", 
 	    input_filename, image->n_images, duration ) ;
+    */
 
     /* FILTER Timer start */
     gettimeofday(&t1, NULL);
@@ -65,6 +68,8 @@ int main( int argc, char ** argv )
     image->height = NULL;
     image->g = NULL;
   }
+
+  gettimeofday(&t1, NULL);
 
   mpi_util_init(image);
 
@@ -78,21 +83,25 @@ int main( int argc, char ** argv )
   /* Apply blur filter with convergence value */
   mpi_apply_blur_filter( image, 5, 20 ) ;
 
-  masters_to_slaves(image);
-
   /* Apply sobel filter on pixels */
   mpi_apply_sobel_filter( image ) ;
 
   slaves_to_masters(image);
   masters_to_dungeon_master(image);
 
+  gettimeofday(&t2, NULL);
+  duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
+
+  if (mpi_rank == 0)
+    printf("%f", duration);
+  //MPI_Finalize();
+  //return 0;
+
   if (mpi_rank == 0) {
     /* FILTER Timer stop */
     gettimeofday(&t2, NULL);
 
     duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
-
-    printf( "SOBEL done in %lf s\n", duration ) ;
 
     /* EXPORT Timer start */
     gettimeofday(&t1, NULL);
@@ -105,7 +114,7 @@ int main( int argc, char ** argv )
 
     duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
 
-    printf( "Export done in %lf s in file %s\n", duration, output_filename ) ;
+    //printf( "Export done in %lf s in file %s\n", duration, output_filename ) ;
   }
 
   MPI_Finalize();
