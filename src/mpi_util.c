@@ -449,27 +449,28 @@ static void blur_filter_parallel(animated_gif * image, int size, int threshold)
 
 static void blur_filter_sequential(animated_gif * image, int size, int threshold)
 {
-  int i, j, k ;
-  int width, height ;
-  int end = 0 ;
-  int n_iter = 0 ;
 
-  pixel ** p ;
-  pixel * new ;
-
-  /* Get the pixels of all images */
-  p = image->p ;
-
+#pragma omp parallel default(none) \
+  shared(mpi_rank, mpi_size, image, size, threshold)
+  {
+    int i;
 
   /* Process all images */
+#pragma omp single
+#pragma omp taskloop nogroup default(none) shared(image, size, threshold)
   for ( i = mpi_rank ; i < image->n_images ; i += mpi_size)
     {
-      n_iter = 0 ;
+      int j, k;
+      int end = 0 ;
+      int width = image->width[i],
+	height = image->height[i];
+      pixel *p = image->p[i] ;
+
       width = image->width[i] ;
       height = image->height[i] ;
 
       /* Allocate array of new pixels */
-      new = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+      pixel *new = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
 
       int upper_bound = height / 10 - size; // this line is NOT treated 
       int lower_bound = height * 0.9 + size; // this line IS treated
@@ -478,9 +479,9 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
       do
         {
 	  end = 1 ;
-	  n_iter++ ;
 
 	  /* Apply blur on top part of image (10%) */
+#pragma omp taskloop nogroup default(none) shared(width, size) firstprivate(p, new, k)
 	  for(j=size; j<upper_bound; j++)
             {
 	      for(k=size; k<width-size; k++)
@@ -494,9 +495,9 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
                     {
 		      for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
                         {
-			  t_r += p[i][CONV(j+stencil_j,k+stencil_k,width)].r ;
-			  t_g += p[i][CONV(j+stencil_j,k+stencil_k,width)].g ;
-			  t_b += p[i][CONV(j+stencil_j,k+stencil_k,width)].b ;
+			  t_r += p[CONV(j+stencil_j,k+stencil_k,width)].r ;
+			  t_g += p[CONV(j+stencil_j,k+stencil_k,width)].g ;
+			  t_b += p[CONV(j+stencil_j,k+stencil_k,width)].b ;
                         }
                     }
 
@@ -507,6 +508,7 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
             }
 
 	  /* Apply blur on the bottom part of the image (10%) */
+#pragma omp taskloop nogroup default(none) shared(width, size) firstprivate(p, new, k)
 	  for(j=lower_bound; j<height-size; j++)
             {
 	      for(k=size; k<width-size; k++)
@@ -520,9 +522,9 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
                     {
 		      for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
                         {
-			  t_r += p[i][CONV(j+stencil_j,k+stencil_k,width)].r ;
-			  t_g += p[i][CONV(j+stencil_j,k+stencil_k,width)].g ;
-			  t_b += p[i][CONV(j+stencil_j,k+stencil_k,width)].b ;
+			  t_r += p[CONV(j+stencil_j,k+stencil_k,width)].r ;
+			  t_g += p[CONV(j+stencil_j,k+stencil_k,width)].g ;
+			  t_b += p[CONV(j+stencil_j,k+stencil_k,width)].b ;
                         }
                     }
 
@@ -532,6 +534,10 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
                 }
             }
 
+#pragma omp taskwait
+
+#pragma omp taskloop nogroup default(none) \
+  shared(width, size, threshold, end) firstprivate(p, new, k)
 	  for(j = size; j < upper_bound; j++)
             {
 	      for(k = size; k < width - size; k++)
@@ -541,9 +547,9 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
 		  float diff_g ;
 		  float diff_b ;
 
-		  diff_r = (new[CONV(j  ,k  ,width)].r - p[i][CONV(j  ,k  ,width)].r) ;
-		  diff_g = (new[CONV(j  ,k  ,width)].g - p[i][CONV(j  ,k  ,width)].g) ;
-		  diff_b = (new[CONV(j  ,k  ,width)].b - p[i][CONV(j  ,k  ,width)].b) ;
+		  diff_r = (new[CONV(j  ,k  ,width)].r - p[CONV(j  ,k  ,width)].r) ;
+		  diff_g = (new[CONV(j  ,k  ,width)].g - p[CONV(j  ,k  ,width)].g) ;
+		  diff_b = (new[CONV(j  ,k  ,width)].b - p[CONV(j  ,k  ,width)].b) ;
 
 		  if ( diff_r > threshold || -diff_r > threshold 
 		       ||
@@ -551,15 +557,18 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
 		       ||
 		       diff_b > threshold || -diff_b > threshold
                        ) {
+#pragma omp atomic write
 		    end = 0 ;
 		  }
 
-		  p[i][CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
-		  p[i][CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
-		  p[i][CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
+		  p[CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
+		  p[CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
+		  p[CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
                 }
             }
 
+#pragma omp taskloop nogroup default(none) \
+  shared(width, size, threshold, end) firstprivate(p, new, k)
 	  for(j = lower_bound; j < height - size; j++)
             {
 	      for(k = size; k < width - size; k++)
@@ -569,9 +578,9 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
 		  float diff_g ;
 		  float diff_b ;
 
-		  diff_r = (new[CONV(j  ,k  ,width)].r - p[i][CONV(j  ,k  ,width)].r) ;
-		  diff_g = (new[CONV(j  ,k  ,width)].g - p[i][CONV(j  ,k  ,width)].g) ;
-		  diff_b = (new[CONV(j  ,k  ,width)].b - p[i][CONV(j  ,k  ,width)].b) ;
+		  diff_r = (new[CONV(j  ,k  ,width)].r - p[CONV(j  ,k  ,width)].r) ;
+		  diff_g = (new[CONV(j  ,k  ,width)].g - p[CONV(j  ,k  ,width)].g) ;
+		  diff_b = (new[CONV(j  ,k  ,width)].b - p[CONV(j  ,k  ,width)].b) ;
 
 		  if ( diff_r > threshold || -diff_r > threshold 
 		       ||
@@ -582,17 +591,20 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
 		    end = 0 ;
 		  }
 
-		  p[i][CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
-		  p[i][CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
-		  p[i][CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
+		  p[CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
+		  p[CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
+		  p[CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
                 }
             }
+
+#pragma omp taskwait
 
         }
       while ( threshold > 0 && !end ) ;
 
       free (new) ;
     }
+  }
 }
 
 /* Applies blur filter on image. Supposes every MPI process
