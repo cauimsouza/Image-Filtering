@@ -329,7 +329,7 @@ static void get_rdispls(int width, int size, int lower_bound, int *recvcounts, i
   rdispls[bsize - 1] = offset;
 }
 
-static void blur_filter_parallel(animated_gif * image, int size, int threshold)
+static void blur_filter_parallel_no_threads(animated_gif * image, int size, int threshold)
 {
   create_blur_comm();
   int bottom = grank % 2;
@@ -416,6 +416,129 @@ static void blur_filter_parallel(animated_gif * image, int size, int threshold)
 	       ||
 	       diff_b > threshold || -diff_b > threshold
 	       ) {
+	    end = 0 ;
+	  }
+
+	  p[CONV(j  ,k  ,width)].r = new[CONV(j  ,k  ,width)].r ;
+	  p[CONV(j  ,k  ,width)].g = new[CONV(j  ,k  ,width)].g ;
+	  p[CONV(j  ,k  ,width)].b = new[CONV(j  ,k  ,width)].b ;
+	}
+
+      MPI_Alltoallv(&p[first_pixel], sendcounts, sdispls, dt_pixel, p, recvcounts, rdispls, dt_pixel, bcomm);
+
+      int my_end = end;
+      MPI_Allreduce(&my_end, &end, 1, MPI_INT, MPI_LAND, gcomm);
+    }
+  while (threshold > 0 && !end) ;
+
+  free (new) ;
+
+  free(sendcounts);
+  free(sdispls);
+  free(recvcounts);
+  free(rdispls);
+
+  /* 
+     fills the missing part of one group with the filtered part of the other group.
+     The processes with grank 0 and 1 have necessarily treated different parts of
+     the image.
+  */
+  MPI_Bcast(&p[size * width], (upper_bound - size) * width, dt_pixel, 0, gcomm);
+  MPI_Bcast(&p[lower_bound * width], (height - size - lower_bound) * width, dt_pixel, 1, gcomm);
+}
+
+static void blur_filter_parallel_threaded(animated_gif * image, int size, int threshold)
+{
+  create_blur_comm();
+  int bottom = grank % 2;
+
+  int image_id = mpi_rank % image->n_images;
+
+  pixel *p = image->p[image_id];
+
+  int width = image->width[image_id],
+    height = image->height[image_id];
+  pixel *new = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+
+  int upper_bound = height / 10 - size; // this line is NOT treated
+  int lower_bound = height * 0.9 + size; // this line IS treated
+
+  int first_pixel, n_pixels;
+  calculate_domain(width, height, size, lower_bound, upper_bound, &first_pixel, &n_pixels);
+
+  int *sendcounts = (int*) malloc(bsize * sizeof(int));
+  get_sendcounts(n_pixels, sendcounts);
+
+  int *sdispls = (int*) malloc(bsize * sizeof(int));
+  get_sdispls(sdispls);
+
+  int *recvcounts = (int*) malloc(bsize * sizeof(int));
+  get_recvcounts(width, height, size, lower_bound, upper_bound, recvcounts);
+
+  int *rdispls = (int*) malloc(bsize * sizeof(int));
+  get_rdispls(width, size, lower_bound, recvcounts, rdispls);
+
+  int end = 0 ;
+#pragma omp parallel default(shared)
+  #pragma omp master
+  do
+    {
+      end = 1 ;
+
+      int i;
+#pragma omp taskloop default(none) shared(width, size, p, new, first_pixel)
+      for (i = 0; i < n_pixels; i++)
+	{
+	  int of = first_pixel + i;
+	  int j = ROW(of, width);
+	  int k = COL(of, width);
+	  if (k < size || k >= width - size)
+	    continue;
+
+	  int stencil_j, stencil_k ;
+	  int t_r = 0 ;
+	  int t_g = 0 ;
+	  int t_b = 0 ;
+
+	  for ( stencil_j = -size ; stencil_j <= size ; stencil_j++ )
+	    {
+	      for ( stencil_k = -size ; stencil_k <= size ; stencil_k++ )
+		{
+		  t_r += p[CONV(j+stencil_j,k+stencil_k,width)].r ;
+		  t_g += p[CONV(j+stencil_j,k+stencil_k,width)].g ;
+		  t_b += p[CONV(j+stencil_j,k+stencil_k,width)].b ;
+		}
+	    }
+
+	  new[CONV(j,k,width)].r = t_r / ( (2*size+1)*(2*size+1) ) ;
+	  new[CONV(j,k,width)].g = t_g / ( (2*size+1)*(2*size+1) ) ;
+	  new[CONV(j,k,width)].b = t_b / ( (2*size+1)*(2*size+1) ) ;
+	}
+
+#pragma omp taskloop default(none) shared(width, size, threshold, end, p, new, first_pixel)
+      for (i = 0; i < n_pixels; i++)
+	{
+	  int of = first_pixel + i;
+	  int j = ROW(of, width);
+	  int k = COL(of, width);
+	  if (k < size || k >= width - size)
+	    continue;
+
+	  float diff_r ;
+	  float diff_g ;
+	  float diff_b ;
+
+	  diff_r = (new[CONV(j  ,k  ,width)].r - p[CONV(j  ,k  ,width)].r) ;
+	  diff_g = (new[CONV(j  ,k  ,width)].g - p[CONV(j  ,k  ,width)].g) ;
+	  diff_b = (new[CONV(j  ,k  ,width)].b - p[CONV(j  ,k  ,width)].b) ;
+
+	  if ( diff_r > threshold || -diff_r > threshold 
+	       ||
+	       diff_g > threshold || -diff_g > threshold
+	       ||
+	       diff_b > threshold || -diff_b > threshold
+	       ) {
+#pragma omp atomic write
 	    end = 0 ;
 	  }
 
@@ -605,6 +728,14 @@ static void blur_filter_sequential(animated_gif * image, int size, int threshold
       free (new) ;
     }
   }
+}
+
+static void blur_filter_parallel(animated_gif *image, int size, int threshold)
+{
+  if (mpi_thread_level_provided >= MPI_THREAD_FUNNELED)
+    blur_filter_parallel_threaded(image, size, threshold);
+  else
+    blur_filter_parallel_no_threads(image, size, threshold);
 }
 
 /* Applies blur filter on image. Supposes every MPI process
