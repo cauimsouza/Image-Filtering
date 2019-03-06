@@ -279,12 +279,14 @@ static void calculate_domain(int width, int height, int size,
 }
 
 static void get_sendcounts(int n_pixels, int *result) {
-  for (int i = 0; i < bsize; i++)
+	int i;
+  for (i = 0; i < bsize; i++)
     result[i] = n_pixels;
 }
 
 static void get_sdispls(int *result) {
-  for (int i = 0; i < bsize; i++)
+	int i;
+  for (i = 0; i < bsize; i++)
     result[i] = 0;
 }
 
@@ -749,7 +751,7 @@ void mpi_apply_sobel_filter( animated_gif * image )
 {
   int i;
 
-#pragma omp parallel default(none) shared(image, mpi_rank, mpi_size)
+#pragma omp parallel default(none) shared(image, mpi_rank, mpi_size) private(i)
 #pragma omp single 
 #pragma omp taskloop nogroup default(none) shared(image, mpi_rank, mpi_size)
   for (i = mpi_rank % image->n_images ; i < image->n_images ; i += mpi_size)
