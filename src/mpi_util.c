@@ -4,9 +4,13 @@
 #include <mpi.h>
 #include <assert.h>
 #include <omp.h>
+#include <string.h>
 
+/* custom headers */
 #include <mpi_util.h>
-#include <stdio.h>
+
+/* system dependent headers */
+#include <sys/sysinfo.h>
 
 #define CONV(l,c,nb_c)				\
   (l)*(nb_c)+(c)
@@ -17,6 +21,39 @@
 static MPI_Datatype dt_pixel;
 static MPI_Comm gcomm, bcomm;
 static int grank, gsize, brank, bsize;
+static int ncores; // number of available cores in this machine
+static int n_mpi_procs; // numbr of mpi processes running on this machine
+
+static void get_n_mpi_procs()
+{
+	int max_hostname_length = 100;
+	char **hostnames = (char**) malloc(mpi_size * sizeof(char*));
+
+	int i;
+	for (i = 0; i < mpi_size; i++)
+		hostnames[i] = (char*) malloc(max_hostname_length * sizeof(char));
+
+	gethostname(hostnames[mpi_rank], max_hostname_length);
+	hostnames[mpi_rank][max_hostname_length - 1] = 0;
+
+	for(i = 0; i < mpi_size; i++)
+		MPI_Bcast(hostnames[i], max_hostname_length, MPI_CHAR, i, MPI_COMM_WORLD);
+
+	n_mpi_procs = 0;
+	for (i = 0; i < mpi_size; i++)
+		if (strcmp(hostnames[i], hostnames[mpi_rank]) == 0)
+			n_mpi_procs++;
+
+	for (i = 0; i < mpi_size; i++)
+		free(hostnames[i]);
+	free(hostnames);
+}
+
+static void get_env_variables()
+{
+	ncores = get_nprocs();
+	get_n_mpi_procs();
+}
 
 static void create_dt_pixel()
 {
@@ -54,6 +91,7 @@ static void bcast_meta(animated_gif *image)
 
 void mpi_util_init(animated_gif *image)
 {
+	get_env_variables();
   create_dt_pixel();
   bcast_meta(image);
   create_comms(image->n_images);
