@@ -10,6 +10,7 @@
 #include <sys/time.h>
 
 #include <gif_lib.h>
+#include <cuda_util.h>
 
 #define SOBELF_DEBUG 0
 
