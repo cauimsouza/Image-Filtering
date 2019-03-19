@@ -560,26 +560,7 @@ store_pixels( char * filename, animated_gif * image )
 #define CONV(l,c,nb_c) \
     (l)*(nb_c)+(c)
 
-void apply_gray_line( animated_gif * image )
-{
-    int i, j, k ;
-    pixel ** p ;
 
-    p = image->p ;
-
-    for ( i = 0 ; i < image->n_images ; i++ )
-    {
-        for ( j = 0 ; j < 10 ; j++ )
-        {
-            for ( k = image->width[i]/2 ; k < image->width[i] ; k++ )
-            {
-            p[i][CONV(j,k,image->width[i])].r = 0 ;
-            p[i][CONV(j,k,image->width[i])].g = 0 ;
-            p[i][CONV(j,k,image->width[i])].b = 0 ;
-            }
-        }
-    }
-}
 
 void
 apply_blur_filter( animated_gif * image, int size, int threshold )
@@ -784,6 +765,7 @@ int main( int argc, char ** argv )
     /* Apply sobel filter on pixels */
     apply_sobel_filter( image ) ;
 
+    apply_gray_line_filter( image ) ;
 
 
     /* Store file from array of pixels to GIF file */

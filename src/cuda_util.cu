@@ -116,6 +116,19 @@ apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, in
     printf("Sobel done in %lf\n", duration);
 }
 
+__global__ void kernel_gray_line(pixel *d_image, pixel *d_gray_line, int N, int width, int height)
+{
+    int i, j, k ;
+
+    int index = blockIdx.x *blockDim.x + threadIdx.x;;
+    if (index < N * width * height){
+        int i, j, k;
+        get_image_indices(index, width, height, &i, &j, &k);
+        d_gray_line[index] = (j >= 0 && j < 10 && k >= width/2 && k < width) ? (pixel) {0, 0, 0} : d_image[index];
+    }
+
+}
+
 void apply_sobel_filter (animated_gif *image){
     apply_kernel(image, &kernel_sobel);
 }
@@ -124,6 +137,10 @@ void
 apply_gray_filter( animated_gif * image )
 {
     apply_kernel(image, &kernel_gray);
+}
+
+void apply_gray_line_filter(animated_gif *image){
+    apply_kernel(image, &kernel_gray_line);
 }
 
 }
