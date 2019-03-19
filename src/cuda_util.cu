@@ -20,14 +20,20 @@ int get_leftmost_bit(int n)
 
     return (1 << msb);
 }
+
+__device__ void get_image_indices(int thread_index, int width, int height, int *i, int *j, int *k){
+    *i = thread_index / (width * height);
+    int in_image_index = thread_index % (width * height);
+    *j = in_image_index / width;
+    *k = in_image_index % width;
+}
+
 __global__ void kernel_sobel(pixel *d_image, pixel *d_sobels, int N, int width, int height){
     int index = blockIdx.x *blockDim.x + threadIdx.x;;
     if (index < N * width * height){
 
-        int i = index / (width * height);
-        int index2 = index % (width * height);
-        int j = index2 / width;
-        int k = index2 % width;
+        int i, j, k;
+        get_image_indices(index, width, height, &i, &j, &k);
 
         if (j == 0 || j == height - 1 || k == 0 || k == width - 1){
             d_sobels[index] = d_image[index];
@@ -55,8 +61,22 @@ __global__ void kernel_sobel(pixel *d_image, pixel *d_sobels, int N, int width, 
     }
 }
 
+__global__ void kernel_gray(pixel *d_image, pixel *d_gray, int N, int width, int height){
+    int index = blockIdx.x *blockDim.x + threadIdx.x;;
+    if (index < N * width * height){
+
+        int i, j, k;
+        get_image_indices(index, width, height, &i, &j, &k);
+
+        int moy = (d_image[index].r + d_image[index].g + d_image[index].b)/3 ;
+        if ( moy < 0 ) moy = 0 ;
+        if ( moy > 255 ) moy = 255 ;
+        d_gray[index] = (pixel) {moy, moy, moy};
+    }
+}
+
 void
-apply_sobel_filter( animated_gif * image )
+apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, int, int, int))
 {
     struct timeval t1, t2;
     gettimeofday(&t1, NULL);
@@ -81,7 +101,7 @@ apply_sobel_filter( animated_gif * image )
     // printf("%d %d %d\n", N, width, height);
     // printf("%d %d\n", blocks, 1024);
     assert( blocks < INT_MAX);
-    kernel_sobel<<< blocks, 1024 >>>(d_image, d_sobels, N, width, height);
+    kernel_function<<< blocks, 1024 >>>(d_image, d_sobels, N, width, height);
     // printf(cudaGetErrorString(cudaGetLastError()));
     // printf("\n");
 
@@ -94,6 +114,16 @@ apply_sobel_filter( animated_gif * image )
     gettimeofday(&t2, NULL);
     double duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
     printf("Sobel done in %lf\n", duration);
+}
+
+void apply_sobel_filter (animated_gif *image){
+    apply_kernel(image, &kernel_sobel);
+}
+
+void
+apply_gray_filter( animated_gif * image )
+{
+    apply_kernel(image, &kernel_gray);
 }
 
 }

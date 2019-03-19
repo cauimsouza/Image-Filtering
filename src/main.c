@@ -556,31 +556,6 @@ store_pixels( char * filename, animated_gif * image )
     return 1 ;
 }
 
-void
-apply_gray_filter( animated_gif * image )
-{
-    int i, j ;
-    pixel ** p ;
-
-    p = image->p ;
-
-    for ( i = 0 ; i < image->n_images ; i++ )
-    {
-        for ( j = 0 ; j < image->width[i] * image->height[i] ; j++ )
-        {
-            int moy ;
-
-            // moy = p[i][j].r/4 + ( p[i][j].g * 3/4 ) ;
-            moy = (p[i][j].r + p[i][j].g + p[i][j].b)/3 ;
-            if ( moy < 0 ) moy = 0 ;
-            if ( moy > 255 ) moy = 255 ;
-
-            p[i][j].r = moy ;
-            p[i][j].g = moy ;
-            p[i][j].b = moy ;
-        }
-    }
-}
 
 #define CONV(l,c,nb_c) \
     (l)*(nb_c)+(c)
@@ -801,7 +776,7 @@ int main( int argc, char ** argv )
 
 
     /* Convert the pixels into grayscale */
-    // apply_gray_filter( image ) ;
+    apply_gray_filter( image ) ;
 
     /* Apply blur filter with convergence value */
     // apply_blur_filter( image, 5, 20 ) ;
