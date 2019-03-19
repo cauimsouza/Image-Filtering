@@ -763,6 +763,7 @@ int main( int argc, char ** argv )
     animated_gif * image ;
     struct timeval t1, t2;
     double duration ;
+    int i;
 
     if ( argc < 3 )
     {
@@ -779,6 +780,14 @@ int main( int argc, char ** argv )
     /* Load file and store the pixels in array */
     image = load_pixels( input_filename ) ;
     if ( image == NULL ) { return 1 ; }
+
+    int width0 = image->width[0], height0 = image->height[0];
+    for (i = 0; i < image->n_images; i++ ){
+        if (image->width[i] != width0 || image->height[0] != height0){
+            fprintf(stderr, "Assertion failed: all images must have the same dimension");
+            return 1;
+        }
+    }
 
     /* IMPORT Timer stop */
     gettimeofday(&t2, NULL);
