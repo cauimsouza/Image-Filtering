@@ -79,7 +79,7 @@ __global__ void kernel_gray(pixel *d_image, pixel *d_gray, int N, int width, int
 }
 
 void
-apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, int, int, int, int),
+apply_kernel_block( animated_gif * image, void (*kernel_function)(pixel *, pixel *, int, int, int, int),
             int window_size, const char *filter_name = (const char*)"filter", int print_time=1)
 {
     struct timeval t1, t2;
@@ -103,12 +103,8 @@ apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, in
         cudaMemcpy(d_image + i * width * height, image->p[i], width * height * sizeof(pixel), cudaMemcpyHostToDevice);
 
     int blocks = get_leftmost_bit((N * width * height) / 1024)<<1;
-    // printf("%d %d %d\n", N, width, height);
-    // printf("%d %d\n", blocks, 1024);
     assert( blocks < INT_MAX);
     kernel_function<<< blocks, 1024 >>>(d_image, d_sobels, N, width, height, window_size);
-    // printf(cudaGetErrorString(cudaGetLastError()));
-    // printf("\n");
 
     for (i = 0 ; i < N; i++)
         cudaMemcpy(image->p[i], d_sobels + i * width * height, width * height * sizeof(pixel), cudaMemcpyDeviceToHost);
@@ -121,6 +117,37 @@ apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, in
         double duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
         printf("%s done in %lf\n", filter_name, duration);
     }
+}
+
+void
+apply_kernel_individual( animated_gif * image, void (*kernel_function)(pixel *, pixel *, int, int, int, int),
+            int window_size, const char *filter_name = (const char*)"filter", int print_time=1)
+{
+    struct timeval t1, t2;
+    if (print_time)
+        gettimeofday(&t1, NULL);
+    int i;
+    animated_gif single_frame;
+    single_frame.n_images = 1;
+    single_frame.g = image->g;
+    for (i = 0 ; i < image->n_images; i++){
+        single_frame.width = (image->width) + i;
+        single_frame.height = (image->height) + i;
+        single_frame.p = (image->p) + i;
+        apply_kernel_block(&single_frame, kernel_function, window_size, filter_name, 0);
+    }
+    if (print_time){
+        gettimeofday(&t2, NULL);
+        double duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
+        printf("%s done in %lf\n", filter_name, duration);
+    }
+}
+
+void
+apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, int, int, int, int),
+            int window_size, const char *filter_name = (const char*)"filter", int print_time=1, int block=1){
+    if (block) apply_kernel_block(image, kernel_function, window_size, filter_name, print_time);
+    else apply_kernel_individual(image, kernel_function, window_size, filter_name, print_time);
 }
 
 __global__ void kernel_gray_line(pixel *d_image, pixel *d_gray_line, int N, int width, int height, int window_size)
