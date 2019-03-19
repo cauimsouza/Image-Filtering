@@ -560,8 +560,33 @@ store_pixels( char * filename, animated_gif * image )
 #define CONV(l,c,nb_c) \
     (l)*(nb_c)+(c)
 
-int verify(animated_gif *a, animated_gif *b, double epsilon){
-    // TODO
+int verify(animated_gif *output, animated_gif *expected, double epsilon){
+    if (output->n_images != expected->n_images)  return 0;
+    if (!output->n_images) return 1;
+    if (output->width[0] != expected->width[0] || output->height[0] != output->height[0])
+        return 0;
+    int n = output->n_images, width = output->width[0], height = output->height[0];
+    int i, j, k;
+    for (i = 0; i < n; i++)
+        for (j = 1; j < height - 1; j++)
+            for (k = 1; k < width - 1; k++){
+                int diff[3] = {
+                    output->p[i][CONV(j, k, width)].r - expected->p[i][CONV(j, k, width)].r,
+                    output->p[i][CONV(j, k, width)].g - expected->p[i][CONV(j, k, width)].g,
+                    output->p[i][CONV(j, k, width)].b - expected->p[i][CONV(j, k, width)].b,
+                };
+                int p;
+                for (p = 0; p < 2; p++)
+                    if(abs(diff[p] > epsilon)) {
+                        pixel poutput = output->p[i][CONV(j, k, width)];
+                        pixel pexpected = expected->p[i][CONV(j, k, width)];
+                        printf("failed at (i, j, k) = (%d, %d, %d)\n", i, j, k);
+                        printf("got RGB(%d, %d, %d)\n", poutput.r, poutput.g, poutput.b);
+                        printf("expected RGB(%d, %d, %d)\n", pexpected.r, pexpected.g, pexpected.b);
+
+                        return 0;
+                    }
+            }
     return 1;
 }
 
@@ -612,10 +637,10 @@ int main( int argc, char ** argv )
     /* Convert the pixels into grayscale */
     apply_gray_filter( image ) ;
 
-    /* Apply blur filter with convergence value */
-    apply_blur_filter( image, 5, 20 ) ;
+    // /* Apply blur filter with convergence value */
+    // // apply_blur_filter( image, 5, 20 ) ;
 
-    /* Apply sobel filter on pixels */
+    // /* Apply sobel filter on pixels */
     apply_sobel_filter( image ) ;
 
     apply_gray_line_filter( image ) ;
@@ -628,7 +653,7 @@ int main( int argc, char ** argv )
             printf("Failed when loading verification image\n");
             return 1;
         }
-        const float epsilon = 0.01;
+        const int epsilon = 10;
         if (verify(image, verif_image, epsilon))
             printf("Output matches verification image\n");
         else{
