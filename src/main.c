@@ -589,7 +589,7 @@ int main( int argc, char ** argv )
     gettimeofday(&t1, NULL);
     image = load_pixels( input_filename ) ;
     gettimeofday(&t2, NULL);
-    if ( image == NULL ) {
+    if ( image == NULL || !image->n_images) {
         printf("Failed when loading the image\n");
         return 1 ;
     }
@@ -605,6 +605,9 @@ int main( int argc, char ** argv )
             return 1;
         }
     }
+
+    // initialize cuda
+    cudaSetDevice(0);
 
     /* Convert the pixels into grayscale */
     apply_gray_filter( image ) ;
