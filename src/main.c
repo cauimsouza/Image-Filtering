@@ -560,6 +560,10 @@ store_pixels( char * filename, animated_gif * image )
 #define CONV(l,c,nb_c) \
     (l)*(nb_c)+(c)
 
+int verify(animated_gif *a, animated_gif *b, double epsilon){
+    // TODO
+    return 1;
+}
 
 
 int main( int argc, char ** argv )
@@ -571,22 +575,29 @@ int main( int argc, char ** argv )
     double duration ;
     int i;
 
-    if ( argc < 3 )
+    if ( argc != 3 && argc != 4 )
     {
-        fprintf( stderr, "Usage: %s input.gif output.gif \n", argv[0] ) ;
+        fprintf( stderr, "Usage: %s input.gif output.gif [verification.gif] \n", argv[0] ) ;
         return 1 ;
     }
 
     input_filename = argv[1] ;
     output_filename = argv[2] ;
 
-    /* IMPORT Timer start */
-    gettimeofday(&t1, NULL);
 
     /* Load file and store the pixels in array */
+    gettimeofday(&t1, NULL);
     image = load_pixels( input_filename ) ;
-    if ( image == NULL ) { return 1 ; }
+    gettimeofday(&t2, NULL);
+    if ( image == NULL ) {
+        printf("Failed when loading the image\n");
+        return 1 ;
+    }
+    duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
+    printf( "GIF loaded from file %s with %d image(s) in %lf s\n",
+            input_filename, image->n_images, duration ) ;
 
+    // Assert constant dimension
     int width0 = image->width[0], height0 = image->height[0];
     for (i = 0; i < image->n_images; i++ ){
         if (image->width[i] != width0 || image->height[0] != height0){
@@ -594,17 +605,6 @@ int main( int argc, char ** argv )
             return 1;
         }
     }
-
-    /* IMPORT Timer stop */
-    gettimeofday(&t2, NULL);
-
-    duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
-
-    printf( "GIF loaded from file %s with %d image(s) in %lf s\n",
-            input_filename, image->n_images, duration ) ;
-
-    /* FILTER Timer start */
-
 
     /* Convert the pixels into grayscale */
     apply_gray_filter( image ) ;
@@ -617,15 +617,31 @@ int main( int argc, char ** argv )
 
     apply_gray_line_filter( image ) ;
 
+    // Verify result if verification image was provided
+    if (argc == 4){
+        char *verif_file = argv[3];
+        animated_gif *verif_image = load_pixels( input_filename ) ;
+        if (verif_image == NULL) {
+            printf("Failed when loading verification image\n");
+            return 1;
+        }
+        const float epsilon = 0.01;
+        if (verify(image, verif_image, epsilon))
+            printf("Output matches verification image\n");
+        else{
+            printf("Output does not match verification image\n");
+            return 1;
+        }
+
+    }
 
     /* Store file from array of pixels to GIF file */
-    if ( !store_pixels( output_filename, image ) ) { return 1 ; }
-
-    /* EXPORT Timer stop */
+    gettimeofday(&t1, NULL);
+    if ( !store_pixels( output_filename, image ) ) {
+        printf("Failed when writing the image\n");
+        return 1 ; }
     gettimeofday(&t2, NULL);
-
     duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
-
     printf( "Export done in %lf s in file %s\n", duration, output_filename ) ;
 
     return 0 ;

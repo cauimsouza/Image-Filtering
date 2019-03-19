@@ -79,10 +79,12 @@ __global__ void kernel_gray(pixel *d_image, pixel *d_gray, int N, int width, int
 }
 
 void
-apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, int, int, int, int), int window_size)
+apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, int, int, int, int),
+            int window_size, const char *filter_name = (const char*)"filter", int print_time=1)
 {
     struct timeval t1, t2;
-    gettimeofday(&t1, NULL);
+    if (print_time)
+        gettimeofday(&t1, NULL);
 
     int i;
 
@@ -114,9 +116,11 @@ apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, in
     cudaFree(d_sobels);
     cudaFree(d_image);
 
-    gettimeofday(&t2, NULL);
-    double duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
-    printf("Sobel done in %lf\n", duration);
+    if (print_time){
+        gettimeofday(&t2, NULL);
+        double duration = (t2.tv_sec -t1.tv_sec)+((t2.tv_usec-t1.tv_usec)/1e6);
+        printf("%s done in %lf\n", filter_name, duration);
+    }
 }
 
 __global__ void kernel_gray_line(pixel *d_image, pixel *d_gray_line, int N, int width, int height, int window_size)
@@ -166,17 +170,17 @@ __global__ void kernel_blur(pixel *d_image, pixel *d_blur, int N, int width, int
 
 
 void apply_sobel_filter (animated_gif *image){
-    apply_kernel(image, &kernel_sobel, NILL);
+    apply_kernel(image, &kernel_sobel, NILL, (const char*)"sobel", 1);
 }
 
 void
 apply_gray_filter( animated_gif * image )
 {
-    apply_kernel(image, &kernel_gray, NILL);
+    apply_kernel(image, &kernel_gray, NILL, (const char*)"gray", 1);
 }
 
 void apply_gray_line_filter(animated_gif *image){
-    apply_kernel(image, &kernel_gray_line, NILL);
+    apply_kernel(image, &kernel_gray_line, NILL, (const char*)"gray_line", 1);
 }
 
 void get_maximum_diffs(animated_gif image, float **diffs){
@@ -191,7 +195,7 @@ void apply_blur_filter(animated_gif *image, int size, int threshold){
     for (i = 0; i < image->n_images; i++)
         diffs[i] = (float*) malloc(3 * sizeof(float));
     for(i = 0;i < NUM_MAX_ITER && !stable;i++){
-        apply_kernel(image, &kernel_blur, size);
+        apply_kernel(image, &kernel_blur, size, (const char*)"blur", 1);
         // get_maximum_diffs(image, diffs);
         // if (abs(diff[0]) < threshold && abs(diff[1]) < threshold && abs(diff[2]) < threshold)
         //     stable = 1;
