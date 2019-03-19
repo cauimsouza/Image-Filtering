@@ -7,6 +7,9 @@ extern "C"{
 #include <cassert>
 #include <sys/time.h>
 
+#define FLATTEN(n_image, n_lin, n_col, width, height) n_image * (width * height) + n_lin * width + n_col
+#define NILL 0
+
 int get_leftmost_bit(int n)
 {
     if (n == 0)
@@ -16,7 +19,7 @@ int get_leftmost_bit(int n)
     while (n != 0) {
         n = n / 2;
         msb++;
-    }
+        }
 
     return (1 << msb);
 }
@@ -28,7 +31,7 @@ __device__ void get_image_indices(int thread_index, int width, int height, int *
     *k = in_image_index % width;
 }
 
-__global__ void kernel_sobel(pixel *d_image, pixel *d_sobels, int N, int width, int height){
+__global__ void kernel_sobel(pixel *d_image, pixel *d_sobels, int N, int width, int height, int window_size){
     int index = blockIdx.x *blockDim.x + threadIdx.x;;
     if (index < N * width * height){
 
@@ -61,7 +64,7 @@ __global__ void kernel_sobel(pixel *d_image, pixel *d_sobels, int N, int width, 
     }
 }
 
-__global__ void kernel_gray(pixel *d_image, pixel *d_gray, int N, int width, int height){
+__global__ void kernel_gray(pixel *d_image, pixel *d_gray, int N, int width, int height, int window_size){
     int index = blockIdx.x *blockDim.x + threadIdx.x;;
     if (index < N * width * height){
 
@@ -76,7 +79,7 @@ __global__ void kernel_gray(pixel *d_image, pixel *d_gray, int N, int width, int
 }
 
 void
-apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, int, int, int))
+apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, int, int, int, int), int window_size)
 {
     struct timeval t1, t2;
     gettimeofday(&t1, NULL);
@@ -101,7 +104,7 @@ apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, in
     // printf("%d %d %d\n", N, width, height);
     // printf("%d %d\n", blocks, 1024);
     assert( blocks < INT_MAX);
-    kernel_function<<< blocks, 1024 >>>(d_image, d_sobels, N, width, height);
+    kernel_function<<< blocks, 1024 >>>(d_image, d_sobels, N, width, height, window_size);
     // printf(cudaGetErrorString(cudaGetLastError()));
     // printf("\n");
 
@@ -116,10 +119,8 @@ apply_kernel( animated_gif * image, void (*kernel_function)(pixel *, pixel *, in
     printf("Sobel done in %lf\n", duration);
 }
 
-__global__ void kernel_gray_line(pixel *d_image, pixel *d_gray_line, int N, int width, int height)
+__global__ void kernel_gray_line(pixel *d_image, pixel *d_gray_line, int N, int width, int height, int window_size)
 {
-    int i, j, k ;
-
     int index = blockIdx.x *blockDim.x + threadIdx.x;;
     if (index < N * width * height){
         int i, j, k;
@@ -129,18 +130,72 @@ __global__ void kernel_gray_line(pixel *d_image, pixel *d_gray_line, int N, int 
 
 }
 
+__global__ void kernel_blur(pixel *d_image, pixel *d_blur, int N, int width, int height, int window_size){
+    int index = blockIdx.x *blockDim.x + threadIdx.x;;
+    if (index < N * width * height) {
+        int i, j, k;
+        get_image_indices(index, width, height, &i, &j, &k);
+
+        if (j < window_size || j >= height - window_size || k < window_size || k >= width - window_size ||
+            j >= 0.1 * height - window_size || j < 0.9 * height + window_size)
+        {
+            d_blur[index] = d_image[index];
+            return;
+        }
+
+        int stencil_j, stencil_k ;
+        int t_r = 0 ;
+        int t_g = 0 ;
+        int t_b = 0 ;
+
+        for ( stencil_j = -window_size ; stencil_j <= window_size ; stencil_j++ )
+        {
+            for ( stencil_k = -window_size ; stencil_k <= window_size ; stencil_k++ )
+            {
+                t_r += d_image[FLATTEN(i, j+stencil_j,k+stencil_k,width, height)].r ;
+                t_g += d_image[FLATTEN(i, j+stencil_j,k+stencil_k,width, height)].g ;
+                t_b += d_image[FLATTEN(i, j+stencil_j,k+stencil_k,width, height)].b ;
+            }
+        }
+
+        d_blur[FLATTEN(i, j,k,width, height)].r = t_r / ( (2*window_size+1)*(2*window_size+1) ) ;
+        d_blur[FLATTEN(i, j,k,width, height)].g = t_g / ( (2*window_size+1)*(2*window_size+1) ) ;
+        d_blur[FLATTEN(i, j,k,width, height)].b = t_b / ( (2*window_size+1)*(2*window_size+1) ) ;
+    }
+}
+
+
 void apply_sobel_filter (animated_gif *image){
-    apply_kernel(image, &kernel_sobel);
+    apply_kernel(image, &kernel_sobel, NILL);
 }
 
 void
 apply_gray_filter( animated_gif * image )
 {
-    apply_kernel(image, &kernel_gray);
+    apply_kernel(image, &kernel_gray, NILL);
 }
 
 void apply_gray_line_filter(animated_gif *image){
-    apply_kernel(image, &kernel_gray_line);
+    apply_kernel(image, &kernel_gray_line, NILL);
+}
+
+void get_maximum_diffs(animated_gif image, float **diffs){
+
+}
+
+void apply_blur_filter(animated_gif *image, int size, int threshold){
+    const int NUM_MAX_ITER = 1;
+    int i;
+    int stable = 0;
+    float **diffs = (float**) malloc(image->n_images * sizeof(float*));
+    for (i = 0; i < image->n_images; i++)
+        diffs[i] = (float*) malloc(3 * sizeof(float));
+    for(i = 0;i < NUM_MAX_ITER && !stable;i++){
+        apply_kernel(image, &kernel_blur, size);
+        // get_maximum_diffs(image, diffs);
+        // if (abs(diff[0]) < threshold && abs(diff[1]) < threshold && abs(diff[2]) < threshold)
+        //     stable = 1;
+    }
 }
 
 }
