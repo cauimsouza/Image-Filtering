@@ -788,10 +788,10 @@ mpi_apply_blur_filter( animated_gif * image, int size, int threshold )
 void mpi_apply_sobel_filter( animated_gif * image )
 {
   int i;
+  pixel *sobel;
+  int first_line, last_line;
 
-#pragma omp parallel default(none) shared(image, mpi_rank, mpi_size) private(i)
-#pragma omp single 
-#pragma omp taskloop nogroup default(none) shared(image, mpi_rank, mpi_size)
+#pragma omp parallel default(none) shared(image, mpi_rank, mpi_size, sobel, first_line, last_line) private(i)
   for (i = mpi_rank % image->n_images ; i < image->n_images ; i += mpi_size)
     {
       int j, k;
@@ -799,17 +799,17 @@ void mpi_apply_sobel_filter( animated_gif * image )
 	height = image->height[i] ;
 
       pixel *p = image->p[i];
-      pixel *sobel;
 
-      sobel = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+#pragma omp single
+	  {
+		sobel = (pixel *)malloc(width * height * sizeof( pixel ) ) ;
+		get_first_last_lines(image, i, &first_line, &last_line);
+		if (first_line == 0) first_line++;
+		if (last_line == height - 1) last_line--;
+	  }
 
-      int first_line, last_line;
-      get_first_last_lines(image, i, &first_line, &last_line);
-      if (first_line == 0) first_line++;
-      if (last_line == height - 1) last_line--;
 
-#pragma omp taskloop default(none) shared(width, p, sobel, first_line, last_line) \
-  firstprivate(k)
+#pragma omp for collapse(2)
       for(j = first_line; j <= last_line; j++)
         {
 	  for(k=1; k<width-1; k++)
@@ -853,7 +853,7 @@ void mpi_apply_sobel_filter( animated_gif * image )
             }
         }
 
-#pragma omp taskloop default(none) shared(p, sobel, width, height) firstprivate(k)
+#pragma omp for collapse(2)
       for(j=1; j<height-1; j++)
         {
 	  for(k=1; k<width-1; k++)
@@ -864,6 +864,7 @@ void mpi_apply_sobel_filter( animated_gif * image )
             }
         }
 
+#pragma omp single
       free (sobel) ;
     }
 }
